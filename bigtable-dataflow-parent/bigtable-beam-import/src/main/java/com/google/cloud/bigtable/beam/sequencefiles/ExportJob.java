@@ -23,7 +23,6 @@ import java.io.Serializable;
 import org.apache.beam.sdk.Pipeline;
 import org.apache.beam.sdk.PipelineResult;
 import org.apache.beam.sdk.extensions.gcp.options.GcpOptions;
-import org.apache.beam.sdk.extensions.gcp.options.GcsOptions;
 import org.apache.beam.sdk.io.DefaultFilenamePolicy;
 import org.apache.beam.sdk.io.FileSystems;
 import org.apache.beam.sdk.io.Read;
@@ -96,10 +95,7 @@ import org.apache.hadoop.io.serializer.WritableSerialization;
  */
 @InternalExtensionOnly
 public class ExportJob {
-
-  static final int GCS_UPLOAD_BUFFER_SIZE_BYTES_DEFAULT = 8388608;
-
-  public interface ExportOptions extends GcpOptions, GcsOptions {
+  public interface ExportOptions extends GcpOptions {
     @Description("This Bigtable App Profile id.")
     ValueProvider<String> getBigtableAppProfileId();
 
@@ -172,25 +168,6 @@ public class ExportJob {
 
     @SuppressWarnings("unused")
     void setWait(boolean wait);
-
-    @Description("Get if idle timeout is retried.")
-    @Default.Boolean(true)
-    boolean getRetryIdleTimeout();
-
-    @SuppressWarnings("unused")
-    void setRetryIdleTimeout(boolean retryIdleTimeout);
-
-    @Description("Read RPC timeout in milliseconds.")
-    ValueProvider<String> getBigtableReadRpcTimeoutMs();
-
-    @SuppressWarnings("unused")
-    void setBigtableReadRpcTimeoutMs(ValueProvider<String> readRpcTimeoutMs);
-
-    @Description("Read RPC attempt timeout in milliseconds.")
-    ValueProvider<String> getBigtableReadRpcAttemptTimeoutMs();
-
-    @SuppressWarnings("unused")
-    void setBigtableReadRpcAttemptTimeoutMs(ValueProvider<String> readRpcAttemptTimeoutMs);
   }
 
   public static void main(String[] args) {
@@ -198,9 +175,6 @@ public class ExportJob {
 
     ExportOptions opts =
         PipelineOptionsFactory.fromArgs(args).withValidation().as(ExportOptions.class);
-    if (opts.getGcsUploadBufferSizeBytes() == null) {
-      opts.setGcsUploadBufferSizeBytes(GCS_UPLOAD_BUFFER_SIZE_BYTES_DEFAULT);
-    }
 
     Pipeline pipeline = buildPipeline(opts);
 
