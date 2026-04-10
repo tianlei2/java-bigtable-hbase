@@ -46,9 +46,11 @@ public class CloudBigtableServiceImpl implements CloudBigtableService {
     builder
         .stubSettings()
         .setTransportChannelProvider(
-            oldTransportProvider.toBuilder()
+            oldTransportProvider
+                .toBuilder()
                 .setChannelPoolSettings(
-                    ChannelPoolSettings.staticallySized(1).toBuilder()
+                    ChannelPoolSettings.staticallySized(1)
+                        .toBuilder()
                         .setPreemptiveRefreshEnabled(false)
                         .build())
                 .build());
