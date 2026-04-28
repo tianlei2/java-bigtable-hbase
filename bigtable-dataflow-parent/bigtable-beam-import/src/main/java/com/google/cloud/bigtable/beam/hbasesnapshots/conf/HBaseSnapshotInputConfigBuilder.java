@@ -130,7 +130,18 @@ public class HBaseSnapshotInputConfigBuilder {
     // Setup GCS connector to use GCS as Hadoop filesystem
     conf.set("fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS");
     conf.set("fs.gs.project.id", projectId);
-    conf.setBoolean("google.cloud.auth.service.account.enable", true);
+    if (new java.io.File("application_default_credentials.json").exists()) {
+      conf.setBoolean("google.cloud.auth.service.account.enable", true);
+      conf.set("fs.gs.auth.service.account.json.keyfile", "application_default_credentials.json");
+    } else {
+      String creds = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
+      if (creds != null && !creds.isEmpty()) {
+        conf.setBoolean("google.cloud.auth.service.account.enable", true);
+        conf.set("fs.gs.auth.service.account.json.keyfile", creds);
+      } else {
+        conf.setBoolean("google.cloud.auth.service.account.enable", true);
+      }
+    }
 
     // Setup MapReduce config for TableSnapshotInputFormat
     conf.setClass(
