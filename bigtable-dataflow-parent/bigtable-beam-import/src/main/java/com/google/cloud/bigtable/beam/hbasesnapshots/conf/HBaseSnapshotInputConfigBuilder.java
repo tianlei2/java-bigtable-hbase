@@ -115,7 +115,11 @@ public class HBaseSnapshotInputConfigBuilder {
     // the restore folder need to under current bucket root so to be considered
     // within the same filesystem with the hbaseSnapshotSourceDir
     TableSnapshotInputFormat.setInput(job, snapshotName, new Path(getRestoreDir()));
-    return job.getConfiguration(); // extract the modified clone
+    Configuration finalConf = job.getConfiguration();
+    // Hack/Workaround: Explicitly unset the keyfile path so the worker falls back to its own
+    // default credentials instead of trying to use the submitter's local path which doesn't exist on workers.
+    finalConf.unset("google.cloud.auth.service.account.json.keyfile");
+    return finalConf;
   }
 
   // separate static part for unit testing
@@ -130,18 +134,14 @@ public class HBaseSnapshotInputConfigBuilder {
     // Setup GCS connector to use GCS as Hadoop filesystem
     conf.set("fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS");
     conf.set("fs.gs.project.id", projectId);
-    if (new java.io.File("application_default_credentials.json").exists()) {
-      conf.setBoolean("google.cloud.auth.service.account.enable", true);
-      conf.set("fs.gs.auth.service.account.json.keyfile", "application_default_credentials.json");
-    } else {
-      String creds = System.getenv("GOOGLE_APPLICATION_CREDENTIALS");
-      if (creds != null && !creds.isEmpty()) {
-        conf.setBoolean("google.cloud.auth.service.account.enable", true);
-        conf.set("fs.gs.auth.service.account.json.keyfile", creds);
-      } else {
-        conf.setBoolean("google.cloud.auth.service.account.enable", true);
-      }
+    // Hack/Workaround: Set the keyfile path for the submitter to access GCS during job setup.
+    // Check for a system property first, falling back to the default CloudTop location.
+    String keyfile = System.getProperty("hadoop.gcs.keyfile");
+    if (keyfile == null) {
+      String userHome = System.getProperty("user.home");
+      keyfile = userHome + "/.config/gcloud/application_default_credentials.json";
     }
+    conf.set("google.cloud.auth.service.account.json.keyfile", keyfile);
 
     // Setup MapReduce config for TableSnapshotInputFormat
     conf.setClass(

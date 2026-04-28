@@ -434,6 +434,8 @@ limitations under the License.
 
                 <configuration>
                   <skip>false</skip>
+                  <skipITs>false</skipITs>
+                  <skipTests>false</skipTests>
                   <includes>
                     <include>**/*IT.java</include>
                   </includes>
