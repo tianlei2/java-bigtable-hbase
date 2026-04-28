@@ -13,7 +13,7 @@
  * See the License for the specific language governing permissions and
  * limitations under the License.
  */
-package com.google.cloud.bigtable.beam.hbasesnapshots;
+package com.google.cloud.bigtable.beam.hbasesnapshots.conf;
 
 import com.google.common.base.Preconditions;
 import org.apache.beam.sdk.extensions.gcp.util.gcsfs.GcsPath;
@@ -37,7 +37,7 @@ import org.apache.hadoop.mapreduce.Job;
  * hosted in Google Cloud Storage(GCS) bucket via GCS connector. It uses {@link
  * TableSnapshotInputFormat} for reading HBase snapshots.
  */
-class HBaseSnapshotInputConfigBuilder {
+public class HBaseSnapshotInputConfigBuilder {
 
   private static final Log LOG = LogFactory.getLog(HBaseSnapshotInputConfigBuilder.class);
   // Batch size used for HBase snapshot scans
@@ -60,6 +60,7 @@ class HBaseSnapshotInputConfigBuilder {
     this.projectId = projectId;
     return this;
   }
+
 
   /*
    * Set the GCS path where the HBase snapshot data is located
@@ -115,7 +116,11 @@ class HBaseSnapshotInputConfigBuilder {
     // the restore folder need to under current bucket root so to be considered
     // within the same filesystem with the hbaseSnapshotSourceDir
     TableSnapshotInputFormat.setInput(job, snapshotName, new Path(getRestoreDir()));
-    return job.getConfiguration(); // extract the modified clone
+    Configuration finalConf = job.getConfiguration();
+    // Hack/Workaround: Explicitly unset the keyfile path so the worker falls back to its own
+    // default credentials instead of trying to use the submitter's local path which doesn't exist on workers.
+    finalConf.unset("google.cloud.auth.service.account.json.keyfile");
+    return finalConf;
   }
 
   // separate static part for unit testing
@@ -131,6 +136,14 @@ class HBaseSnapshotInputConfigBuilder {
     conf.set("fs.AbstractFileSystem.gs.impl", "com.google.cloud.hadoop.fs.gcs.GoogleHadoopFS");
     conf.set("fs.gs.project.id", projectId);
     conf.setBoolean("google.cloud.auth.service.account.enable", true);
+    // Hack/Workaround: Set the keyfile path for the submitter to access GCS during job setup.
+    // Check for a system property first, falling back to the default CloudTop location.
+    String keyfile = System.getProperty("hadoop.gcs.keyfile");
+    if (keyfile == null) {
+      String userHome = System.getProperty("user.home");
+      keyfile = userHome + "/.config/gcloud/application_default_credentials.json";
+    }
+    conf.set("google.cloud.auth.service.account.json.keyfile", keyfile);
 
     // Setup MapReduce config for TableSnapshotInputFormat
     conf.setClass(

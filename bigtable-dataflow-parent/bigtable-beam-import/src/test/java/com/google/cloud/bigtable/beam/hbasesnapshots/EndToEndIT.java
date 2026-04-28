@@ -19,6 +19,8 @@ import com.google.api.services.storage.model.Objects;
 import com.google.api.services.storage.model.StorageObject;
 import com.google.bigtable.repackaged.com.google.gson.Gson;
 import com.google.cloud.bigtable.beam.hbasesnapshots.ImportJobFromHbaseSnapshot.ImportOptions;
+import com.google.cloud.bigtable.beam.hbasesnapshots.conf.HBaseSnapshotInputConfigBuilder;
+import com.google.cloud.bigtable.beam.hbasesnapshots.dofn.CleanupHBaseSnapshotRestoreFiles;
 import com.google.cloud.bigtable.beam.sequencefiles.HBaseResultToMutationFn;
 import com.google.cloud.bigtable.beam.test_env.EnvSetup;
 import com.google.cloud.bigtable.beam.test_env.TestProperties;
@@ -26,7 +28,6 @@ import com.google.cloud.bigtable.beam.validation.HadoopHashTableSource.RangeHash
 import com.google.cloud.bigtable.beam.validation.SyncTableJob;
 import com.google.cloud.bigtable.beam.validation.SyncTableJob.SyncTableOptions;
 import com.google.cloud.bigtable.hbase.BigtableConfiguration;
-import com.google.cloud.bigtable.hbase.BigtableOptionsFactory;
 import com.google.common.base.Preconditions;
 import com.google.common.io.ByteStreams;
 import java.io.BufferedReader;
@@ -55,7 +56,6 @@ import org.apache.beam.sdk.extensions.gcp.util.gcsfs.GcsPath;
 import org.apache.beam.sdk.metrics.MetricQueryResults;
 import org.apache.beam.sdk.options.PipelineOptionsFactory;
 import org.apache.beam.sdk.options.ValueProvider.StaticValueProvider;
-import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.hbase.Cell;
 import org.apache.hadoop.hbase.HColumnDescriptor;
 import org.apache.hadoop.hbase.HConstants;
@@ -78,7 +78,7 @@ import org.slf4j.LoggerFactory;
  * End to end integration test for pipeline that import HBase snapshot data into Cloud Bigtable and
  * validates the imported data with SyncTable.
  * Prepare test data with gsutil(https://cloud.google.com/storage/docs/quickstart-gsutil):
- * gcloud storage cp --recursive <PATH_TO_REPO>/bigtable-dataflow-parent/bigtable-beam-import/src/test/integration-test \
+ * gsutil -m cp -r <PATH_TO_REPO>/bigtable-dataflow-parent/bigtable-beam-import/src/test/integration-test \
  *  gs://<test_bucket>/cloud-data-dir/
  */
 public class EndToEndIT {
@@ -122,15 +122,13 @@ public class EndToEndIT {
     properties.applyTo(gcpOptions);
     gcsUtil = new GcsUtil.GcsUtilFactory().create(gcpOptions);
 
+    System.err.println(">>> Starting test setup (uploading snapshot fixture to GCS)...");
     uploadFixture(gcsUtil, SNAPSHOT_FIXTURE_NAME, fixtureDir);
-
-    // Disable CSM to reduce noise in the test output
-    Configuration config =
-        BigtableConfiguration.configure(properties.getProjectId(), properties.getInstanceId());
-    config.set(BigtableOptionsFactory.BIGTABLE_ENABLE_CLIENT_SIDE_METRICS, "false");
+    System.err.println(">>> Snapshot fixture uploaded to GCS!");
 
     // Bigtable config
-    connection = BigtableConfiguration.connect(config);
+    connection =
+        BigtableConfiguration.connect(properties.getProjectId(), properties.getInstanceId());
     // TODO: use timebased names to allow for gc
     tableId = "test_" + UUID.randomUUID();
 
@@ -147,6 +145,24 @@ public class EndToEndIT {
     HTableDescriptor descriptor = new HTableDescriptor(tableName);
     descriptor.addFamily(new HColumnDescriptor(CF));
     connection.getAdmin().createTable(descriptor, SnapshotTestingUtils.getSplitKeys());
+
+    LOG.info("Waiting for table {} to be ready", tableId);
+    boolean ready = false;
+    for (int i = 0; i < 60; i++) {
+      try (Table table = connection.getTable(tableName)) {
+        // A dummy get ensures the table is actually serving data
+        table.get(new Get(org.apache.hadoop.hbase.util.Bytes.toBytes("dummy")));
+        ready = true;
+        break;
+      } catch (Exception e) {
+        LOG.info("Table " + tableId + " not ready yet (read failed): " + e.getMessage());
+      }
+      Thread.sleep(5000);
+    }
+    if (!ready) {
+      throw new RuntimeException("Table " + tableId + " did not become ready in time");
+    }
+
   }
 
   @After
@@ -188,6 +204,7 @@ public class EndToEndIT {
     filesToUpload.entrySet().parallelStream()
         .forEach(
             e -> {
+              System.err.println(">>> Uploading fixture file to GCS: " + e.getKey());
               GcsPath path = GcsPath.fromUri(destPath + e.getKey());
               GcsUtil.CreateOptions opts =
                   GcsUtil.CreateOptions.builder()
@@ -307,19 +324,35 @@ public class EndToEndIT {
     ImportOptions importOpts = createImportOptions();
 
     // run pipeline
-    State state = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run().waitUntilFinish();
+    System.err.println(">>> Launching HBase Snapshot Import Dataflow Job...");
+    org.apache.beam.sdk.PipelineResult importResult = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run();
+    System.err.println(">>> Import Job Launched!");
+    if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+      System.err.println(">>> Dataflow Job ID: " + job.getJobId());
+    }
+    State state = importResult.waitUntilFinish();
+    if (state != State.DONE) {
+      System.err.println("Pipeline failed! State: " + state);
+      if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+        org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+        System.err.println("Dataflow Job ID: " + job.getJobId());
+      }
+    }
     Assert.assertEquals(State.DONE, state);
 
     // check that the .restore dir used for temp files has been removed
     // The restore directory is stored relative to the snapshot directory and contains the job name
+    System.err.println(">>> Auditing GCS for temporary restore files...");
     String bucket = GcsPath.fromUri(hbaseSnapshotDir).getBucket();
     String restorePathPrefix =
-        CleanupHBaseSnapshotRestoreFilesFn.getListPrefix(
-            HBaseSnapshotInputConfigBuilder.RESTORE_DIR);
+        CleanupHBaseSnapshotRestoreFiles.getListPrefix(HBaseSnapshotInputConfigBuilder.RESTORE_DIR + importOpts.getJobName());
     List<StorageObject> allObjects = new ArrayList<>();
     String nextToken;
+    int pageCount = 0;
     do {
       Objects objects = gcsUtil.listObjects(bucket, restorePathPrefix, null);
+      System.err.println(">>> Fetched page " + (++pageCount) + " of GCS objects in restore dir...");
       List<StorageObject> items = objects.getItems();
       if (items != null) {
         allObjects.addAll(items);
@@ -336,7 +369,13 @@ public class EndToEndIT {
     // Verify the import using the sync job
     SyncTableOptions syncOpts = createSyncTableOptions();
 
+    System.err.println(">>> Launching SyncTable Dataflow Job...");
     PipelineResult result = SyncTableJob.buildPipeline(syncOpts).run();
+    System.err.println(">>> SyncTable Job Launched!");
+    if (result instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) result;
+      System.err.println(">>> SyncTable Dataflow Job ID: " + job.getJobId());
+    }
     state = result.waitUntilFinish();
     Assert.assertEquals(State.DONE, state);
 
@@ -357,7 +396,21 @@ public class EndToEndIT {
   public void testHBaseSnapshotImportWithCorruptions() throws Exception {
     // Import snapshot
     ImportOptions importOpts = createImportOptions();
-    State state = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run().waitUntilFinish();
+    System.err.println(">>> Launching HBase Snapshot Import Job (with corruptions test)...");
+    org.apache.beam.sdk.PipelineResult importResult = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run();
+    System.err.println(">>> Import Job Launched!");
+    if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+      System.err.println(">>> Dataflow Job ID: " + job.getJobId());
+    }
+    State state = importResult.waitUntilFinish();
+    if (state != State.DONE) {
+      System.err.println("Pipeline failed! State: " + state);
+      if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+        org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+        System.err.println("Dataflow Job ID: " + job.getJobId());
+      }
+    }
     Assert.assertEquals(State.DONE, state);
 
     // Rows where corruptions will be added.
@@ -395,7 +448,13 @@ public class EndToEndIT {
 
     // Run SyncTable job and expect 4 mismatches.
     SyncTableOptions syncOpts = createSyncTableOptions();
+    System.err.println(">>> Launching SyncTable Job (expecting mismatches)...");
     PipelineResult result = SyncTableJob.buildPipeline(syncOpts).run();
+    System.err.println(">>> SyncTable Job Launched!");
+    if (result instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) result;
+      System.err.println(">>> SyncTable Dataflow Job ID: " + job.getJobId());
+    }
     state = result.waitUntilFinish();
     Assert.assertEquals(State.DONE, state);
 
@@ -420,20 +479,36 @@ public class EndToEndIT {
     importOpts.setSnapshotName(TEST_SNAPPY_SNAPSHOT_NAME);
 
     // run pipeline
-    State state = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run().waitUntilFinish();
+    System.err.println(">>> Launching Snappy Compressed Snapshot Import Job...");
+    org.apache.beam.sdk.PipelineResult importResult = ImportJobFromHbaseSnapshot.buildPipeline(importOpts).run();
+    System.err.println(">>> Import Job Launched!");
+    if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+      System.err.println(">>> Dataflow Job ID: " + job.getJobId());
+    }
+    State state = importResult.waitUntilFinish();
+    if (state != State.DONE) {
+      System.err.println("Pipeline failed! State: " + state);
+      if (importResult instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+        org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) importResult;
+        System.err.println("Dataflow Job ID: " + job.getJobId());
+      }
+    }
     Assert.assertEquals(State.DONE, state);
 
     // check that the .restore dir used for temp files has been removed
     // The restore directory is stored relative to the snapshot directory and contains the job name
+    System.err.println(">>> Auditing GCS for temporary restore files (Snappy)...");
     String bucket = GcsPath.fromUri(hbaseSnapshotDir).getBucket();
     String restorePathPrefix =
-        CleanupHBaseSnapshotRestoreFilesFn.getListPrefix(
-            HBaseSnapshotInputConfigBuilder.RESTORE_DIR);
+        CleanupHBaseSnapshotRestoreFiles.getListPrefix(HBaseSnapshotInputConfigBuilder.RESTORE_DIR + importOpts.getJobName());
 
     List<StorageObject> allObjects = new ArrayList<>();
     String nextToken;
+    int pageCount = 0;
     do {
       Objects objects = gcsUtil.listObjects(bucket, restorePathPrefix, null);
+      System.err.println(">>> Fetched page " + (++pageCount) + " of GCS objects in restore dir (Snappy)...");
       List<StorageObject> items = objects.getItems();
       if (items != null) {
         allObjects.addAll(items);
@@ -450,7 +525,13 @@ public class EndToEndIT {
     // Verify the import using the sync job
     SyncTableOptions syncOpts = createSyncTableOptions();
 
+    System.err.println(">>> Launching SyncTable Job for Snappy Snapshot...");
     PipelineResult result = SyncTableJob.buildPipeline(syncOpts).run();
+    System.err.println(">>> SyncTable Job Launched!");
+    if (result instanceof org.apache.beam.runners.dataflow.DataflowPipelineJob) {
+      org.apache.beam.runners.dataflow.DataflowPipelineJob job = (org.apache.beam.runners.dataflow.DataflowPipelineJob) result;
+      System.err.println(">>> SyncTable Dataflow Job ID: " + job.getJobId());
+    }
     state = result.waitUntilFinish();
     Assert.assertEquals(State.DONE, state);
 
@@ -462,4 +543,6 @@ public class EndToEndIT {
     Assert.assertEquals(counters.get("ranges_matched"), (Long) 100L);
     Assert.assertEquals(counters.get("ranges_not_matched"), (Long) 0L);
   }
+
+
 }
