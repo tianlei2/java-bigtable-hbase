@@ -222,12 +222,6 @@ public class EndToEndIT {
     // Setup Hashes
     syncOpts.setHashTableOutputDir(StaticValueProvider.of(hashDir));
     syncOpts.setOutputPrefix(StaticValueProvider.of(syncTableOutputDir));
-
-    String stagedJar = System.getProperty("google.dataflow.staged-jar");
-    if (stagedJar != null && !stagedJar.isEmpty()) {
-      syncTableOpts.setFilesToStage(java.util.Collections.singletonList(stagedJar));
-    }
-
     return syncOpts;
   }
 
@@ -246,12 +240,6 @@ public class EndToEndIT {
     // setup HBase snapshot info
     importOpts.setHbaseSnapshotSourceDir(hbaseSnapshotDir);
     importOpts.setSnapshotName(TEST_SNAPSHOT_NAME);
-
-    String stagedJar = System.getProperty("google.dataflow.staged-jar");
-    if (stagedJar != null && !stagedJar.isEmpty()) {
-      importPipelineOpts.setFilesToStage(java.util.Collections.singletonList(stagedJar));
-    }
-
     return importOpts;
   }
 
