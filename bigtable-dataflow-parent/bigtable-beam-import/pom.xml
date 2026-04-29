@@ -441,6 +441,7 @@ limitations under the License.
                   </includes>
                   <systemPropertyVariables>
                     <hadoop.gcs.keyfile>${hadoop.gcs.keyfile}</hadoop.gcs.keyfile>
+                    <javax.net.ssl.trustStore>${javax.net.ssl.trustStore}</javax.net.ssl.trustStore>
                   </systemPropertyVariables>
                   <!-- Use Isolated Classloader so that dataflow can find all files
                        that must be staged.
