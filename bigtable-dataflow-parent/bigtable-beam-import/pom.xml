@@ -439,6 +439,9 @@ limitations under the License.
                   <includes>
                     <include>**/*IT.java</include>
                   </includes>
+                  <systemPropertyVariables>
+                    <hadoop.gcs.keyfile>${hadoop.gcs.keyfile}</hadoop.gcs.keyfile>
+                  </systemPropertyVariables>
                   <!-- Use Isolated Classloader so that dataflow can find all files
                        that must be staged.
                   -->
