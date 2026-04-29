@@ -58,7 +58,7 @@ public class EnvSetup {
     FileSystems.setDefaultPipelineOptions(opts);
 
     // TODO: stage test/integration-test/{data,hashtable}
-    stageJars();
+    // stageJars();
   }
 
   /**
