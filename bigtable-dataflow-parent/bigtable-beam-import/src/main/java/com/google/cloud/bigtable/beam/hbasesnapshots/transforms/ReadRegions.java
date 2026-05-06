@@ -15,8 +15,6 @@
  */
 package com.google.cloud.bigtable.beam.hbasesnapshots.transforms;
 
-// import com.google.cloud.bigtable.beam.hbasesnapshots.ImportSnapshots;
-
 import com.google.api.core.InternalApi;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.RegionConfig;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
@@ -189,17 +187,14 @@ public class ReadRegions
       boolean hasSplit = false;
       try (HBaseRegionScanner scanner = newScanner(regionConfig, tracker.currentRestriction())) {
         for (Result result = scanner.next(); result != null; result = scanner.next()) {
-          //  if (flag==0 ) {
           if (tracker.tryClaim(ByteKey.copyFrom(result.getRow()))) {
             outputReceiver.output(KV.of(regionConfig.getSnapshotConfig(), result));
           } else {
             hasSplit = true;
             break;
           }
-          // }
         }
       }
-      // if (!hasSplit)
       tracker.tryClaim(ByteKey.EMPTY);
     }
 
@@ -357,13 +352,15 @@ public class ReadRegions
         throws IOException {
       if (element.getValue().listCells().isEmpty()) return;
       String targetTable = element.getKey().getTableName();
+      String snapshotName = element.getKey().getSnapshotName();
 
       // Limit the number of mutations per Put (server will reject >= 100k mutations per Put)
       byte[] rowKey = element.getValue().getRow();
       List<Mutation> mutations = new ArrayList<>();
 
       boolean logAndSkipIncompatibleRowMutations =
-          verifyRowMutationThresholds(rowKey, element.getValue().listCells(), mutations);
+          verifyRowMutationThresholds(
+              rowKey, element.getValue().listCells(), mutations, snapshotName);
 
       if (!logAndSkipIncompatibleRowMutations && mutations.size() > 0) {
         outputReceiver.output(KV.of(targetTable, mutations));
@@ -371,7 +368,8 @@ public class ReadRegions
     }
 
     private boolean verifyRowMutationThresholds(
-        byte[] rowKey, List<Cell> cells, List<Mutation> mutations) throws IOException {
+        byte[] rowKey, List<Cell> cells, List<Mutation> mutations, String snapshotName)
+        throws IOException {
       boolean logAndSkipIncompatibleRows = false;
 
       Put put = null;
@@ -384,9 +382,10 @@ public class ReadRegions
 
         // handle large cells
         if (filterLargeCells && cell.getValueLength() > filterLargeCellThresholdBytes) {
-          // TODO add config name in log
           LOG.warn(
-              "Dropping mutation, cell value length, "
+              "For snapshot "
+                  + snapshotName
+                  + ": Dropping mutation, cell value length, "
                   + cell.getValueLength()
                   + ", exceeds filter length, "
                   + filterLargeCellThresholdBytes
@@ -407,11 +406,12 @@ public class ReadRegions
         cellCount++;
       }
 
-      // TODO add config name in log
       if (filterLargeRows && totalByteSize > filterLargeRowThresholdBytes) {
         logAndSkipIncompatibleRows = true;
         LOG.warn(
-            "Dropping row, row length, "
+            "For snapshot "
+                + snapshotName
+                + ": Dropping row, row length, "
                 + totalByteSize
                 + ", exceeds filter length threshold, "
                 + filterLargeRowThresholdBytes
@@ -419,11 +419,12 @@ public class ReadRegions
                 + Bytes.toStringBinary(rowKey));
       }
 
-      // TODO add config name in log
       if (filterLargeRowKeys && rowKey.length > filterLargeRowKeysThresholdBytes) {
         logAndSkipIncompatibleRows = true;
         LOG.warn(
-            "Dropping row, row key length, "
+            "For snapshot "
+                + snapshotName
+                + ": Dropping row, row key length, "
                 + rowKey.length
                 + ", exceeds filter length threshold, "
                 + filterLargeRowKeysThresholdBytes

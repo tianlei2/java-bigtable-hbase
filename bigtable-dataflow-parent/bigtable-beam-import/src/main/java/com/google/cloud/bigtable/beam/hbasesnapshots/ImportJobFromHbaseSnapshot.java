@@ -333,8 +333,6 @@ public class ImportJobFromHbaseSnapshot {
       return pipeline;
     }
     // Read records from hbase region files and write to Bigtable
-    //    PCollection<RegionConfig> hbaseRecords = restoredSnapshots
-    //            .apply("List Regions", new ListRegions());
     PCollection<KV<String, Iterable<Mutation>>> hbaseRecords =
         restoredSnapshots
             .apply("List Regions", new ListRegions())

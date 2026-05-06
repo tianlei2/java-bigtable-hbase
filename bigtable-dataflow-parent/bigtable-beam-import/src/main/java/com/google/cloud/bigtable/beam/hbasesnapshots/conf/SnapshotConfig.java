@@ -38,7 +38,6 @@ public abstract class SnapshotConfig implements Serializable {
 
   public abstract String getSourceLocation();
 
-  //  public abstract Path getSourcePath();
   @Memoized
   public Path getSourcePath() {
     return new Path(getSourceLocation());

@@ -264,7 +264,6 @@ public class SnapshotUtils {
     // Build GCS path from given string e.g:
     // gs://sym-bucket/snapshots/20220309230526/.hbase-snapshot
     GcsPath gcsPath = GcsPath.fromUri(importSnapshotpath);
-    // LOG.info("GCS Path:" + gcsPath + ";Object:" + gcsPath.getObject());
     Map<String, String> snapshots = new HashMap<>();
 
     List<StorageObject> objects =

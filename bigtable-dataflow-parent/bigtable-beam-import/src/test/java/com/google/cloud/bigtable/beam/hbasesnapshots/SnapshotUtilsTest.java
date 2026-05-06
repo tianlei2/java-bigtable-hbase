@@ -225,7 +225,6 @@ public class SnapshotUtilsTest {
         getMatchingSnapshotsFromSnapshotPath(snapshotList, ".*attachments.*");
     List<String> expectedResult =
         snapshotList.stream().filter(e -> e.contains("attachments")).collect(Collectors.toList());
-    // LOG.info("Matched:{} and expected:{}", snapshots.size(), expectedResult.size());
     assertThat(snapshots.size(), is(equalTo(expectedResult.size())));
     assertThat(snapshots.keySet(), containsInAnyOrder(expectedResult.toArray(new String[0])));
   }

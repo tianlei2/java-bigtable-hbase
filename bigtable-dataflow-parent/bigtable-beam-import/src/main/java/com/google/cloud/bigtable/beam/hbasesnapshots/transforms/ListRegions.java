@@ -67,7 +67,7 @@ public class ListRegions
         regionsSize.put(regionManifest.getRegionInfo().getRegionId(), totalSize);
       }
 
-      return regionsSize; // (int)Math.ceil((totalSize * 1.0)/GIGA_BYTE);
+      return regionsSize;
     }
 
     /**
