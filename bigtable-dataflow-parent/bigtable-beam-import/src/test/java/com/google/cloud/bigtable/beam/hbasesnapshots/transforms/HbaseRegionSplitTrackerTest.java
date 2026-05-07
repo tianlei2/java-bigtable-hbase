@@ -31,7 +31,10 @@ import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
 
-/** Tests the {@link HbaseRegionSplitTracker} to ensure correct delegation and dynamic splitting behavior. */
+/**
+ * Tests the {@link HbaseRegionSplitTracker} to ensure correct delegation and dynamic splitting
+ * behavior.
+ */
 @RunWith(JUnit4.class)
 public class HbaseRegionSplitTrackerTest {
 
