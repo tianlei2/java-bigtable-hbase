@@ -50,7 +50,8 @@ public class CleanUpRestoredSnapshotsTest {
       Assert.assertFalse(restoreDir.exists());
     } else {
       LOG.warn(
-          "Skipping CleanUpRestoredSnapshotsTest since temporary file was unable to be created in restore path: {}",
+          "Skipping CleanUpRestoredSnapshotsTest since temporary file was unable to be created in"
+              + " restore path: {}",
           restoreDir.getAbsolutePath());
     }
   }
@@ -65,6 +66,10 @@ public class CleanUpRestoredSnapshotsTest {
     pipeline
         .apply("CreateInput", Create.of(SnapshotTestHelper.newSnapshotConfig("invalid_path")))
         .apply("DeleteSnapshot", ParDo.of(new CleanupRestoredSnapshots()));
+
+    // The pipeline should run successfully without throwing an exception.
+    // The CleanupRestoredSnapshots DoFn handles exceptions internally (logs them after retries)
+    // and does not fail the job.
     pipeline.run();
   }
 }

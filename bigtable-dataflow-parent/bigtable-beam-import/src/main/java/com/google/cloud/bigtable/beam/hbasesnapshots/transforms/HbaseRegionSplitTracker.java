@@ -49,10 +49,12 @@ public class HbaseRegionSplitTracker extends RestrictionTracker<ByteKeyRange, By
     this.enableDynamicSplitting = enableDynamicSplitting;
   }
 
+  @Override
   public ByteKeyRange currentRestriction() {
     return this.byteKeyRangeTracker.currentRestriction();
   }
 
+  @Override
   public SplitResult<ByteKeyRange> trySplit(double fractionOfRemainder) {
     LOG.info(
         "Splitting restriction for region:{} in snapshot:{}", this.regionName, this.snapshotName);
@@ -60,18 +62,22 @@ public class HbaseRegionSplitTracker extends RestrictionTracker<ByteKeyRange, By
     return enableDynamicSplitting ? this.byteKeyRangeTracker.trySplit(fractionOfRemainder) : null;
   }
 
+  @Override
   public boolean tryClaim(ByteKey key) {
     return this.byteKeyRangeTracker.tryClaim(key);
   }
 
+  @Override
   public void checkDone() throws IllegalStateException {
     this.byteKeyRangeTracker.checkDone();
   }
 
+  @Override
   public RestrictionTracker.IsBounded isBounded() {
     return this.byteKeyRangeTracker.isBounded();
   }
 
+  @Override
   public String toString() {
     return this.byteKeyRangeTracker.toString();
   }

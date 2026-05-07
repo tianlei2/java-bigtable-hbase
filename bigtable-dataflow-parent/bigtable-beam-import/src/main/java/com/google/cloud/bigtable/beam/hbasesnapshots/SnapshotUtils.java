@@ -65,7 +65,7 @@ public class SnapshotUtils {
   private static final String GCS_SCHEME = "gs";
   private static final Sleeper sleeper = Sleeper.DEFAULT;
   private static final Object lock = new Object();
-  private static Configuration hbaseConfiguration;
+  private static volatile Configuration hbaseConfiguration;
 
   private SnapshotUtils() {}
 
@@ -76,7 +76,8 @@ public class SnapshotUtils {
     } catch (URISyntaxException e) {
       throw new RuntimeException(
           String.format(
-              "Invalid file path format for snapshot source directory: %s. Valid paths should have file scheme (gs://, file://)",
+              "Invalid file path format for snapshot source directory: %s. Valid paths should have"
+                  + " file scheme (gs://, file://)",
               hbaseSnapshotSourceDirectory));
     }
 
@@ -235,7 +236,8 @@ public class SnapshotUtils {
         snapshots.put(snapshotWithTableName[0], snapshotWithTableName[0]);
       else
         throw new IllegalArgumentException(
-            "Invalid specification format for snapshots. Expected format is snapshot1:table1,snapshot2:table2");
+            "Invalid specification format for snapshots. Expected format is"
+                + " snapshot1:table1,snapshot2:table2");
     }
     return snapshots;
   }
