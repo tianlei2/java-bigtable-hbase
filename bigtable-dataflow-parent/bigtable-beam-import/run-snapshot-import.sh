@@ -43,22 +43,26 @@ START_SHARD=$1
 END_SHARD=$2
 
 # Configurations (Uses environment variables if set, otherwise defaults)
-export PROJECT_ID="${PROJECT_ID:-google.com:cloud-bigtable-dev}"
-export INSTANCE_ID="${INSTANCE_ID:-tianlei-test-inst}"
-export BUCKET="${BUCKET:-tianlei-beam-test-bucket}"
-export REGION="${REGION:-us-central1}"
+# Environment variables configuration.
+# Please set these variables before running the script.
+# See SNAPSHOT_IMPORT_USAGE.md for details and expected values.
 
-export TABLE_NAME="${TABLE_NAME:-validation_test}"
-export SNAPSHOT_NAME="${SNAPSHOT_NAME:-validation_test_20200929}"
-export SNAPSHOT_SOURCE_DIR="${SNAPSHOT_SOURCE_DIR:-gs://${BUCKET}/snapshots}"
-export SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-295490517436-compute@developer.gserviceaccount.com}"
-
-export NUM_SHARDS="${NUM_SHARDS:-20}"
-export MAX_INFLIGHT_RPCS="${MAX_INFLIGHT_RPCS:-100}"
-export BULK_MUTATION_CLOSE_TIMEOUT_MINUTES="${BULK_MUTATION_CLOSE_TIMEOUT_MINUTES:-30}"
-
-export NETWORK="${NETWORK:-tianlei-network}"
-export SUBNETWORK="${SUBNETWORK:-regions/us-central1/subnetworks/tianlei-network}"
+# export PROJECT_ID="your-project-id"
+# export INSTANCE_ID="your-instance-id"
+# export BUCKET="your-gcs-bucket"
+# export REGION="us-central1"
+# 
+# export TABLE_NAME="your-table-name"
+# export SNAPSHOT_NAME="your-snapshot-name"
+# export SNAPSHOT_SOURCE_DIR="gs://your-gcs-bucket/snapshots"
+# export SERVICE_ACCOUNT="your-service-account"
+# 
+# export NUM_SHARDS="20"
+# export MAX_INFLIGHT_RPCS="100"
+# export BULK_MUTATION_CLOSE_TIMEOUT_MINUTES="30"
+# 
+# export NETWORK="your-network"
+# export SUBNETWORK="your-subnetwork"
 
 JAR_PATH="target/bigtable-beam-import-2.17.0-shaded.jar"
 
