@@ -50,6 +50,7 @@ export REGION="${REGION:-us-central1}"
 
 export TABLE_NAME="${TABLE_NAME:-validation_test}"
 export SNAPSHOT_NAME="${SNAPSHOT_NAME:-validation_test_20200929}"
+export SNAPSHOT_SOURCE_DIR="${SNAPSHOT_SOURCE_DIR:-gs://${BUCKET}/snapshots}"
 export SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-295490517436-compute@developer.gserviceaccount.com}"
 
 export NUM_SHARDS="${NUM_SHARDS:-20}"
@@ -70,7 +71,8 @@ if [ "$1" == "--all" ]; then
       --project=${PROJECT_ID} \
       --bigtableInstanceId=${INSTANCE_ID} \
       --bigtableTableId=${TABLE_NAME} \
-      --importConfigFilePath=import-config-test.json \
+      --hbaseSnapshotSourceDir=${SNAPSHOT_SOURCE_DIR} \
+      --snapshots=${SNAPSHOT_NAME}:${TABLE_NAME} \
       --stagingLocation=gs://${BUCKET}/dataflow/staging \
       --tempLocation=gs://${BUCKET}/dataflow/temp \
       --region=${REGION} \
@@ -118,7 +120,8 @@ for i in $(seq $START_SHARD $END_SHARD); do
     --project=${PROJECT_ID} \
     --bigtableInstanceId=${INSTANCE_ID} \
     --bigtableTableId=${TABLE_NAME} \
-    --importConfigFilePath=import-config-test.json \
+    --hbaseSnapshotSourceDir=${SNAPSHOT_SOURCE_DIR} \
+    --snapshots=${SNAPSHOT_NAME}:${TABLE_NAME} \
     --stagingLocation=gs://${BUCKET}/dataflow/staging \
     --tempLocation=gs://${BUCKET}/dataflow/temp \
     --workerMachineType=n1-highmem-4 \
