@@ -54,6 +54,8 @@ export SNAPSHOT_SOURCE_DIR="${SNAPSHOT_SOURCE_DIR:-gs://${BUCKET}/snapshots}"
 export SERVICE_ACCOUNT="${SERVICE_ACCOUNT:-295490517436-compute@developer.gserviceaccount.com}"
 
 export NUM_SHARDS="${NUM_SHARDS:-20}"
+export MAX_INFLIGHT_RPCS="${MAX_INFLIGHT_RPCS:-100}"
+export BULK_MUTATION_CLOSE_TIMEOUT_MINUTES="${BULK_MUTATION_CLOSE_TIMEOUT_MINUTES:-30}"
 
 export NETWORK="${NETWORK:-tianlei-network}"
 export SUBNETWORK="${SUBNETWORK:-regions/us-central1/subnetworks/tianlei-network}"
@@ -136,7 +138,9 @@ for i in $(seq $START_SHARD $END_SHARD); do
     --shardIndex=$i \
     --jobName="${JOB}" \
     --network=${NETWORK} \
-    --subnetwork=${SUBNETWORK}
+    --subnetwork=${SUBNETWORK} \
+    --maxInflightRpcs=${MAX_INFLIGHT_RPCS} \
+    --bulkMutationCloseTimeoutMinutes=${BULK_MUTATION_CLOSE_TIMEOUT_MINUTES}
 
   # Sequential within this script instance
 done
