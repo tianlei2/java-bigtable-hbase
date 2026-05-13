@@ -40,6 +40,7 @@
 # ------------------------------------------------------------------------------
 # Usage: ./run-snapshot-import.sh <start_shard> <end_shard>
 #   Or:  ./run-snapshot-import.sh --all
+#        (Runs all shards in parallel groups of 4 by default)
 #
 # Examples:
 #   ./run-snapshot-import.sh 0 3

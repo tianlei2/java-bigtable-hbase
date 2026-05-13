@@ -34,7 +34,7 @@ Example: `./run-snapshot-import.sh 0 5`
 ```bash
 ./run-snapshot-import.sh --all
 ```
-This mode will first run the restore step, and then launch background processes for all shards in parallel.
+This mode will first run the restore step, and then launch background processes for all shards in parallel groups of 4 by default.
 
 ## Advanced Usage
 
