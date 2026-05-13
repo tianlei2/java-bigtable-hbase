@@ -11,27 +11,7 @@
 # You can override default configurations by setting environment variables in your terminal.
 # Example: TABLE_NAME="my-table" SNAPSHOT_NAME="my-snap" ./run-snapshot-import.sh 0 3
 #
-# NOTE: If you are running on a newer JDK (like Java 21 or 26) and hit ByteBuddy errors,
-# you can add '-Dnet.bytebuddy.experimental=true' to the java command lines below.
-#
-# --- Manual Parallel Execution ---
-# To run shards in parallel groups of 4 (assuming 20 shards total), you can run 5 instances of this script.
-#
-# IMPORTANT: Shard 0 performs the restore step. You MUST run the first group (including shard 0)
-# first and let it complete the restore step before launching other groups in parallel, 
-# otherwise they will fail because the restored files won't exist yet!
-#
-# Example for manual parallel execution:
-#   ./run-snapshot-import.sh 0 3 &  # Run this first!
-#   # Wait for shard 0 to finish restore, then run the rest:
-#   ./run-snapshot-import.sh 4 7 &
-#   ./run-snapshot-import.sh 8 11 &
-#   ./run-snapshot-import.sh 12 15 &
-#   ./run-snapshot-import.sh 16 19 &
-#
-# --- Automated Parallel Execution ---
-# Alternatively, use the --all flag to automatically handle the restore step and launch all groups:
-#   ./run-snapshot-import.sh --all
+# See SNAPSHOT_IMPORT_USAGE.md for advanced usage and troubleshooting.
 
 if [ "$#" -ne 2 ] && [ "$1" != "--all" ]; then
     echo "Usage: $0 <start_shard> <end_shard>"

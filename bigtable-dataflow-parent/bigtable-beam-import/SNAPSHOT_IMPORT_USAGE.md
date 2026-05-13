@@ -35,3 +35,28 @@ Example: `./run-snapshot-import.sh 0 5`
 ./run-snapshot-import.sh --all
 ```
 This mode will first run the restore step, and then launch background processes for all shards in parallel.
+
+## Advanced Usage
+
+### Manual Parallel Execution
+
+To run shards in parallel groups (e.g., assuming 20 shards total), you can run multiple instances of this script.
+
+> [!IMPORTANT]
+> Shard 0 performs the restore step. You MUST run the first group (including shard 0) first and let it complete the restore step before launching other groups in parallel. Otherwise, they will fail because the restored files won't exist yet!
+
+Example for manual parallel execution:
+```bash
+./run-snapshot-import.sh 0 3 &  # Run this first!
+# Wait for shard 0 to finish restore, then run the rest:
+./run-snapshot-import.sh 4 7 &
+./run-snapshot-import.sh 8 11 &
+./run-snapshot-import.sh 12 15 &
+./run-snapshot-import.sh 16 19 &
+```
+
+## Troubleshooting
+
+### JDK Compatibility
+
+If you are running on a newer JDK (like Java 21 or 26) and hit ByteBuddy errors, you can add `-Dnet.bytebuddy.experimental=true` to the `java` command lines in the script.
