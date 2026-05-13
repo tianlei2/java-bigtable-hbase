@@ -1,17 +1,49 @@
 #!/bin/bash
 
-# This script runs a range of Dataflow snapshot import jobs sequentially.
-# It should be executed from the 'bigtable-dataflow-parent/bigtable-beam-import' directory.
+# ==============================================================================
+# HBase Snapshot Import Helper Script
+# ==============================================================================
+# This script runs a range of Dataflow snapshot import jobs sequentially or in parallel.
+# Must be executed from the 'bigtable-dataflow-parent/bigtable-beam-import' directory.
 #
+# For detailed usage and advanced options, see: SNAPSHOT_IMPORT_USAGE.md
+# ==============================================================================
+
+# ------------------------------------------------------------------------------
+# Environment Variables
+# ------------------------------------------------------------------------------
+# Most users will need to set these variables before running the script.
+# See SNAPSHOT_IMPORT_USAGE.md for details and expected values.
+
+# --- Required / Common Configurations ---
+# export PROJECT_ID="your-project-id"
+# export INSTANCE_ID="your-instance-id"
+# export BUCKET="your-gcs-bucket"
+# export REGION="us-central1"
+# 
+# export TABLE_NAME="your-table-name"
+# export SNAPSHOT_NAME="your-snapshot-name"
+# export SNAPSHOT_SOURCE_DIR="gs://your-gcs-bucket/snapshots"
+# export SERVICE_ACCOUNT="your-service-account"
+
+# --- Sharding & Tuning ---
+# export NUM_SHARDS="20"
+# export MAX_INFLIGHT_RPCS="100"
+# export BULK_MUTATION_CLOSE_TIMEOUT_MINUTES="30"
+
+# --- Network Configurations ---
+# export NETWORK="your-network"
+# export SUBNETWORK="your-subnetwork"
+
+# ------------------------------------------------------------------------------
+# Usage
+# ------------------------------------------------------------------------------
 # Usage: ./run-snapshot-import.sh <start_shard> <end_shard>
 #   Or:  ./run-snapshot-import.sh --all
-# Example: ./run-snapshot-import.sh 0 3
-# Example: ./run-snapshot-import.sh --all
 #
-# You can override default configurations by setting environment variables in your terminal.
-# Example: TABLE_NAME="my-table" SNAPSHOT_NAME="my-snap" ./run-snapshot-import.sh 0 3
-#
-# See SNAPSHOT_IMPORT_USAGE.md for advanced usage and troubleshooting.
+# Examples:
+#   ./run-snapshot-import.sh 0 3
+#   ./run-snapshot-import.sh --all
 
 if [ "$#" -ne 2 ] && [ "$1" != "--all" ]; then
     echo "Usage: $0 <start_shard> <end_shard>"
@@ -22,28 +54,7 @@ fi
 START_SHARD=$1
 END_SHARD=$2
 
-# Configurations (Uses environment variables if set, otherwise defaults)
-# Environment variables configuration.
-# Please set these variables before running the script.
-# See SNAPSHOT_IMPORT_USAGE.md for details and expected values.
-
-# export PROJECT_ID="your-project-id"
-# export INSTANCE_ID="your-instance-id"
-# export BUCKET="your-gcs-bucket"
-# export REGION="us-central1"
-# 
-# export TABLE_NAME="your-table-name"
-# export SNAPSHOT_NAME="your-snapshot-name"
-# export SNAPSHOT_SOURCE_DIR="gs://your-gcs-bucket/snapshots"
-# export SERVICE_ACCOUNT="your-service-account"
-# 
-# export NUM_SHARDS="20"
-# export MAX_INFLIGHT_RPCS="100"
-# export BULK_MUTATION_CLOSE_TIMEOUT_MINUTES="30"
-# 
-# export NETWORK="your-network"
-# export SUBNETWORK="your-subnetwork"
-
+# Configurations
 JAR_PATH="target/bigtable-beam-import-2.17.0-shaded.jar"
 
 # --- AUTO-PARALLEL MODE ---
