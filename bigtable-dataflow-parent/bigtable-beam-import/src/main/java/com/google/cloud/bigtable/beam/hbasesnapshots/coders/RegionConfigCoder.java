@@ -18,11 +18,14 @@ package com.google.cloud.bigtable.beam.hbasesnapshots.coders;
 import com.google.api.core.InternalApi;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.RegionConfig;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
-import java.io.*;
+import java.io.IOException;
+import java.io.InputStream;
+import java.io.OutputStream;
 import java.util.Collections;
 import java.util.List;
+import org.apache.beam.sdk.coders.ByteArrayCoder;
 import org.apache.beam.sdk.coders.Coder;
-import org.apache.beam.sdk.coders.CoderException;
+import org.apache.beam.sdk.coders.SerializableCoder;
 import org.apache.beam.sdk.coders.VarLongCoder;
 import org.apache.hadoop.hbase.client.RegionInfo;
 import org.apache.hadoop.hbase.client.TableDescriptor;
@@ -35,59 +38,42 @@ import org.apache.hadoop.hbase.shaded.protobuf.generated.HBaseProtos.TableSchema
 public class RegionConfigCoder extends Coder<RegionConfig> {
   private static final VarLongCoder longCoder = VarLongCoder.of();
 
+  private static final Coder<SnapshotConfig> snapshotConfigCoder =
+      SerializableCoder.of(SnapshotConfig.class);
+  private static final Coder<byte[]> byteArrayCoder = ByteArrayCoder.of();
+
   @Override
   public void encode(RegionConfig value, OutputStream outStream) throws IOException {
-    ObjectOutputStream objectOutputStream = new ObjectOutputStream(outStream);
-    objectOutputStream.writeObject(value.getSnapshotConfig());
+    snapshotConfigCoder.encode(value.getSnapshotConfig(), outStream);
 
     HBaseProtos.RegionInfo regionInfo = ProtobufUtil.toRegionInfo(value.getRegionInfo());
-    ByteArrayOutputStream boas1 = new ByteArrayOutputStream();
-    regionInfo.writeTo(boas1);
-    objectOutputStream.writeObject(boas1.toByteArray());
+    byteArrayCoder.encode(regionInfo.toByteArray(), outStream);
 
     HBaseProtos.TableSchema tableSchema = ProtobufUtil.toTableSchema(value.getTableDescriptor());
-    ByteArrayOutputStream boas2 = new ByteArrayOutputStream();
-    tableSchema.writeTo(boas2);
-    objectOutputStream.writeObject(boas2.toByteArray());
+    byteArrayCoder.encode(tableSchema.toByteArray(), outStream);
 
     longCoder.encode(value.getRegionSize(), outStream);
   }
 
   @Override
   public RegionConfig decode(InputStream inStream) throws IOException {
-    ObjectInputStream objectInputStream = new ObjectInputStream(inStream);
-    SnapshotConfig snapshotConfig;
-    try {
-      snapshotConfig = (SnapshotConfig) objectInputStream.readObject();
-    } catch (ClassNotFoundException e) {
-      throw new CoderException("Failed to deserialize RestoredSnapshotConfig", e);
-    }
+    SnapshotConfig snapshotConfig = snapshotConfigCoder.decode(inStream);
 
-    RegionInfo regionInfoProto = null;
-    try {
-      regionInfoProto =
-          ProtobufUtil.toRegionInfo(
-              HBaseProtos.RegionInfo.parseFrom((byte[]) objectInputStream.readObject()));
-    } catch (ClassNotFoundException e) {
-      throw new CoderException("Failed to parse regionInfo", e);
-    }
+    byte[] regionInfoBytes = byteArrayCoder.decode(inStream);
+    RegionInfo regionInfo =
+        ProtobufUtil.toRegionInfo(HBaseProtos.RegionInfo.parseFrom(regionInfoBytes));
 
-    TableDescriptor tableSchema = null;
-    try {
-      tableSchema =
-          ProtobufUtil.toTableDescriptor(
-              TableSchema.parseFrom((byte[]) objectInputStream.readObject()));
-    } catch (ClassNotFoundException e) {
-      throw new CoderException("Failed to parse tableSchema", e);
-    }
+    byte[] tableSchemaBytes = byteArrayCoder.decode(inStream);
+    TableDescriptor tableDescriptor =
+        ProtobufUtil.toTableDescriptor(TableSchema.parseFrom(tableSchemaBytes));
 
-    Long regionsize = longCoder.decode(inStream);
+    Long regionSize = longCoder.decode(inStream);
 
     return RegionConfig.builder()
         .setSnapshotConfig(snapshotConfig)
-        .setRegionInfo(regionInfoProto)
-        .setTableDescriptor(tableSchema)
-        .setRegionSize(regionsize)
+        .setRegionInfo(regionInfo)
+        .setTableDescriptor(tableDescriptor)
+        .setRegionSize(regionSize)
         .build();
   }
 

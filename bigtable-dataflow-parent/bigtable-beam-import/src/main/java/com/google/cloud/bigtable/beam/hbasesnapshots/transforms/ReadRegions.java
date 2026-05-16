@@ -33,7 +33,8 @@ import org.apache.beam.sdk.transforms.ParDo;
 import org.apache.beam.sdk.values.KV;
 import org.apache.beam.sdk.values.PCollection;
 import org.apache.beam.sdk.values.TypeDescriptor;
-import org.apache.hadoop.hbase.client.*;
+import org.apache.hadoop.hbase.client.Mutation;
+import org.apache.hadoop.hbase.client.Result;
 import org.slf4j.Logger;
 import org.slf4j.LoggerFactory;
 
@@ -103,6 +104,12 @@ public class ReadRegions
     this.shardIndex = shardIndex;
   }
 
+  static boolean isRegionSelected(RegionConfig rc, int numShards, int shardIndex) {
+    byte[] regionName = rc.getRegionInfo().getEncodedNameAsBytes();
+    long remainder = new BigInteger(regionName).mod(BigInteger.valueOf(numShards)).longValue();
+    return remainder == shardIndex;
+  }
+
   @Override
   public PCollection<KV<String, Iterable<Mutation>>> expand(
       PCollection<RegionConfig> regionConfig) {
@@ -123,12 +130,7 @@ public class ReadRegions
               "Select regions for shard",
               Filter.by(
                   rc -> {
-                    // encodedName is an MD5 hash of the region info and therefor should be well
-                    // distributed
-                    byte[] regionName = rc.getRegionInfo().getEncodedNameAsBytes();
-                    long remainder =
-                        new BigInteger(regionName).mod(BigInteger.valueOf(numShards)).longValue();
-                    boolean shouldTake = remainder == shardIndex;
+                    boolean shouldTake = isRegionSelected(rc, numShards, shardIndex);
                     LOG.info(
                         "Region {} was {} due to sharding",
                         rc.getRegionInfo().getRegionNameAsString(),

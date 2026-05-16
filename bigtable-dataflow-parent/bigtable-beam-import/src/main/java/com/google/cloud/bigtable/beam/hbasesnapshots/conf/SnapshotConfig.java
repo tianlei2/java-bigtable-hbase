@@ -16,7 +16,6 @@
 package com.google.cloud.bigtable.beam.hbasesnapshots.conf;
 
 import com.google.auto.value.AutoValue;
-import com.google.auto.value.extension.memoized.Memoized;
 import com.google.cloud.bigtable.beam.hbasesnapshots.SnapshotUtils;
 import java.io.Serializable;
 import java.util.Map;
@@ -38,12 +37,10 @@ public abstract class SnapshotConfig implements Serializable {
 
   public abstract String getSourceLocation();
 
-  @Memoized
   public Path getSourcePath() {
     return new Path(getSourceLocation());
   }
 
-  @Memoized
   public Path getRestorePath() {
     return new Path(getRestoreLocation());
   }

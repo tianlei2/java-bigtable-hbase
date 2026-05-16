@@ -15,14 +15,22 @@
  */
 package com.google.cloud.bigtable.beam.hbasesnapshots.transforms;
 
-import static org.junit.Assert.assertFalse;
 import static org.junit.Assert.assertTrue;
-import static org.mockito.Mockito.mock;
-import static org.mockito.Mockito.when;
 
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.RegionConfig;
+import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
 import java.math.BigInteger;
+import org.apache.beam.sdk.testing.PAssert;
+import org.apache.beam.sdk.testing.TestPipeline;
+import org.apache.beam.sdk.transforms.Create;
+import org.apache.beam.sdk.transforms.Filter;
+import org.apache.hadoop.hbase.TableName;
+import org.apache.hadoop.hbase.client.ColumnFamilyDescriptorBuilder;
 import org.apache.hadoop.hbase.client.RegionInfo;
+import org.apache.hadoop.hbase.client.RegionInfoBuilder;
+import org.apache.hadoop.hbase.client.TableDescriptor;
+import org.apache.hadoop.hbase.client.TableDescriptorBuilder;
+import org.junit.Rule;
 import org.junit.Test;
 import org.junit.runner.RunWith;
 import org.junit.runners.JUnit4;
@@ -30,6 +38,8 @@ import org.junit.runners.JUnit4;
 /** Tests the {@link ReadRegions} transform. */
 @RunWith(JUnit4.class)
 public class ReadRegionsTest {
+
+  @Rule public final transient TestPipeline pipeline = TestPipeline.create();
 
   /** Tests that constructor throws exception when numShards is set but shardIndex is missing. */
   @Test(expected = IllegalArgumentException.class)
@@ -67,25 +77,71 @@ public class ReadRegionsTest {
 
   /**
    * Tests that the sharding logic correctly selects or skips regions based on their encoded name,
-   * numShards, and shardIndex.
+   * numShards, and shardIndex using TestPipeline.
    */
   @Test
-  public void testShardingFilterPredicate() {
-    RegionConfig rc = mock(RegionConfig.class);
-    RegionInfo ri = mock(RegionInfo.class);
-    when(rc.getRegionInfo()).thenReturn(ri);
+  public void testShardingWithPipeline() {
+    SnapshotConfig snapshotConfig =
+        SnapshotConfig.builder()
+            .setProjectId("project")
+            .setSourceLocation("source")
+            .setSnapshotName("snapshot")
+            .setTableName("table")
+            .setRestoreLocation("restore")
+            .setConfigurationDetails(java.util.Collections.emptyMap())
+            .build();
 
-    // "a" in bytes is 97. 97 % 4 = 1.
-    when(ri.getEncodedNameAsBytes()).thenReturn("a".getBytes());
+    TableDescriptor td =
+        TableDescriptorBuilder.newBuilder(TableName.valueOf("table"))
+            .setColumnFamily(ColumnFamilyDescriptorBuilder.newBuilder("cf".getBytes()).build())
+            .build();
 
-    // If shardIndex is 1, it should be taken.
-    assertTrue(isTaken("a".getBytes(), 4, 1));
-    // If shardIndex is 0, it should be skipped.
-    assertFalse(isTaken("a".getBytes(), 4, 0));
-  }
+    RegionInfo ri1 =
+        RegionInfoBuilder.newBuilder(TableName.valueOf("table")).setRegionId(1).build();
 
-  private boolean isTaken(byte[] regionName, int numShards, int shardIndex) {
-    long remainder = new BigInteger(regionName).mod(BigInteger.valueOf(numShards)).longValue();
-    return remainder == shardIndex;
+    RegionConfig rc1 =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(ri1)
+            .setTableDescriptor(td)
+            .setRegionSize(100L)
+            .setName("region1")
+            .build();
+
+    RegionInfo ri2 =
+        RegionInfoBuilder.newBuilder(TableName.valueOf("table")).setRegionId(2).build();
+
+    RegionConfig rc2 =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(ri2)
+            .setTableDescriptor(td)
+            .setRegionSize(100L)
+            .setName("region2")
+            .build();
+
+    int shard1 = new BigInteger(ri1.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
+    int shard2 = new BigInteger(ri2.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
+
+    int targetShard = shard1;
+
+    org.apache.beam.sdk.values.PCollection<RegionConfig> input =
+        pipeline.apply(
+            Create.of(rc1, rc2)
+                .withCoder(
+                    new com.google.cloud.bigtable.beam.hbasesnapshots.coders.RegionConfigCoder()));
+
+    org.apache.beam.sdk.values.PCollection<RegionConfig> output =
+        input.apply(Filter.by(rc -> ReadRegions.isRegionSelected(rc, 4, targetShard)));
+
+    java.util.List<RegionConfig> expected = new java.util.ArrayList<>();
+    expected.add(rc1);
+    if (shard2 == targetShard) {
+      expected.add(rc2);
+    }
+
+    PAssert.that(output).containsInAnyOrder(expected);
+
+    pipeline.run();
   }
 }

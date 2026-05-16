@@ -268,20 +268,31 @@ public class SnapshotUtils {
     GcsPath gcsPath = GcsPath.fromUri(importSnapshotpath);
     Map<String, String> snapshots = new HashMap<>();
 
-    List<StorageObject> objects =
-        gcsUtil.listObjects(gcsPath.getBucket(), gcsPath.getObject(), null).getItems();
-    if (objects == null)
+    List<StorageObject> allObjects = new java.util.ArrayList<>();
+    String pageToken = null;
+    do {
+      com.google.api.services.storage.model.Objects objects =
+          gcsUtil.listObjects(gcsPath.getBucket(), gcsPath.getObject(), pageToken);
+      if (objects.getItems() == null) {
+        break;
+      }
+      allObjects.addAll(objects.getItems());
+      pageToken = objects.getNextPageToken();
+    } while (pageToken != null);
+
+    if (allObjects.isEmpty())
       throw new IllegalStateException(
           String.format("Snapshot path %s does not contain any snapshots", importSnapshotpath));
 
     // Build a pattern for object portion e.g if path is
     // gs://sym-bucket/snapshots/20220309230526/.hbase-snapshot
     // the object portion would be snapshots/60G/20220309230526/.hbase-snapshot
-    Pattern pathPattern = Pattern.compile(String.format("%s/(.+?/)", gcsPath.getObject()));
+    Pattern pathPattern =
+        Pattern.compile(String.format("%s/(.+?/)", Pattern.quote(gcsPath.getObject())));
     Pattern prefixPattern = prefix.equals("*") ? null : Pattern.compile(prefix);
     Matcher pathMatcher = null;
     String snapshotName = null;
-    for (StorageObject object : objects) {
+    for (StorageObject object : allObjects) {
       pathMatcher = pathPattern.matcher(object.getId());
       if (pathMatcher.find()) {
         // Group 1 represents the snapshot directory name along with suffix slash (e.g: snapshot1/)

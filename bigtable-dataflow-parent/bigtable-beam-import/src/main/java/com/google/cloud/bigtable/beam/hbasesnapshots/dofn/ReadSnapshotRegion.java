@@ -54,18 +54,17 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
       RestrictionTracker<ByteKeyRange, ByteKey> tracker)
       throws Exception {
 
-    boolean hasSplit = false;
     try (HBaseRegionScanner scanner = newScanner(regionConfig, tracker.currentRestriction())) {
       for (Result result = scanner.next(); result != null; result = scanner.next()) {
         if (tracker.tryClaim(ByteKey.copyFrom(result.getRow()))) {
           outputReceiver.output(KV.of(regionConfig.getSnapshotConfig(), result));
         } else {
-          hasSplit = true;
-          break;
+          return;
         }
       }
+      // Scanner exhausted naturally. Claim the end key to mark done.
+      tracker.tryClaim(tracker.currentRestriction().getEndKey());
     }
-    tracker.tryClaim(ByteKey.EMPTY);
   }
 
   HBaseRegionScanner newScanner(RegionConfig regionConfig, ByteKeyRange byteKeyRange)

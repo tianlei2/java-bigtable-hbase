@@ -43,14 +43,32 @@ public class ReadSnapshotRegionTest {
 
   @Before
   public void setUp() {
-    regionConfig = mock(RegionConfig.class);
-    snapshotConfig = mock(SnapshotConfig.class);
-    regionInfo = mock(org.apache.hadoop.hbase.client.RegionInfo.class);
+    snapshotConfig =
+        SnapshotConfig.builder()
+            .setProjectId("test-project")
+            .setSourceLocation("gs://test-bucket/source")
+            .setSnapshotName("test-snapshot")
+            .setTableName("test-table")
+            .setRestoreLocation("gs://test-bucket/restore")
+            .setConfigurationDetails(new java.util.HashMap<>())
+            .build();
 
-    when(regionConfig.getSnapshotConfig()).thenReturn(snapshotConfig);
-    when(regionConfig.getRegionInfo()).thenReturn(regionInfo);
-    when(snapshotConfig.getSnapshotName()).thenReturn("test-snapshot");
-    when(regionInfo.getEncodedName()).thenReturn("test-region");
+    regionInfo =
+        org.apache.hadoop.hbase.client.RegionInfoBuilder.newBuilder(
+                org.apache.hadoop.hbase.TableName.valueOf("test-table"))
+            .setRegionId(12345L)
+            .build();
+
+    regionConfig =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(regionInfo)
+            .setTableDescriptor(
+                org.apache.hadoop.hbase.client.TableDescriptorBuilder.newBuilder(
+                        org.apache.hadoop.hbase.TableName.valueOf("test-table"))
+                    .build())
+            .setRegionSize(100L)
+            .build();
   }
 
   /**
@@ -59,10 +77,11 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testProcessElement() throws Exception {
-    RestrictionTracker<ByteKeyRange, ByteKey> tracker = mock(RestrictionTracker.class);
     ByteKeyRange range =
         ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.copyFrom("z".getBytes()));
-    when(tracker.currentRestriction()).thenReturn(range);
+    RestrictionTracker<ByteKeyRange, ByteKey> tracker =
+        new com.google.cloud.bigtable.beam.hbasesnapshots.transforms.HbaseRegionSplitTracker(
+            "test-snapshot", "test-region", range, true);
 
     HBaseRegionScanner scanner = mock(HBaseRegionScanner.class);
     Result result1 = mock(Result.class);
@@ -71,9 +90,6 @@ public class ReadSnapshotRegionTest {
     when(result2.getRow()).thenReturn("c".getBytes());
 
     when(scanner.next()).thenReturn(result1, result2, null);
-
-    when(tracker.tryClaim(ByteKey.copyFrom("b".getBytes()))).thenReturn(true);
-    when(tracker.tryClaim(ByteKey.copyFrom("c".getBytes()))).thenReturn(true);
 
     ReadSnapshotRegion fn = new TestReadSnapshotRegion(true, scanner);
 
@@ -83,8 +99,6 @@ public class ReadSnapshotRegionTest {
 
     verify(receiver, times(1)).output(KV.of(snapshotConfig, result1));
     verify(receiver, times(1)).output(KV.of(snapshotConfig, result2));
-
-    verify(tracker, times(1)).tryClaim(ByteKey.EMPTY);
   }
 
   /**
@@ -93,10 +107,11 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testProcessElement_StopOnClaimFailure() throws Exception {
-    RestrictionTracker<ByteKeyRange, ByteKey> tracker = mock(RestrictionTracker.class);
     ByteKeyRange range =
         ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.copyFrom("z".getBytes()));
-    when(tracker.currentRestriction()).thenReturn(range);
+    RestrictionTracker<ByteKeyRange, ByteKey> tracker =
+        new com.google.cloud.bigtable.beam.hbasesnapshots.transforms.HbaseRegionSplitTracker(
+            "test-snapshot", "test-region", range, true);
 
     HBaseRegionScanner scanner = mock(HBaseRegionScanner.class);
     Result result1 = mock(Result.class);
@@ -104,10 +119,22 @@ public class ReadSnapshotRegionTest {
     when(result1.getRow()).thenReturn("b".getBytes());
     when(result2.getRow()).thenReturn("c".getBytes());
 
-    when(scanner.next()).thenReturn(result1, result2, null);
+    when(scanner.next())
+        .thenAnswer(
+            new org.mockito.stubbing.Answer<Result>() {
+              private int count = 0;
 
-    when(tracker.tryClaim(ByteKey.copyFrom("b".getBytes()))).thenReturn(true);
-    when(tracker.tryClaim(ByteKey.copyFrom("c".getBytes()))).thenReturn(false);
+              @Override
+              public Result answer(org.mockito.invocation.InvocationOnMock invocation) {
+                count++;
+                if (count == 1) return result1;
+                if (count == 2) {
+                  tracker.trySplit(0.0);
+                  return result2;
+                }
+                return null;
+              }
+            });
 
     ReadSnapshotRegion fn = new TestReadSnapshotRegion(true, scanner);
 
@@ -117,8 +144,6 @@ public class ReadSnapshotRegionTest {
 
     verify(receiver, times(1)).output(KV.of(snapshotConfig, result1));
     verify(receiver, times(0)).output(KV.of(snapshotConfig, result2));
-
-    verify(tracker, times(1)).tryClaim(ByteKey.EMPTY);
   }
 
   /**
@@ -127,7 +152,13 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testSplitRestriction_NoSplit() throws Exception {
-    when(regionConfig.getRegionSize()).thenReturn(100L * 1024 * 1024); // 100 MB
+    RegionConfig testRegionConfig =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(regionInfo)
+            .setTableDescriptor(regionConfig.getTableDescriptor())
+            .setRegionSize(100L * 1024 * 1024) // 100 MB
+            .build();
 
     ByteKeyRange range =
         ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.copyFrom("z".getBytes()));
@@ -135,7 +166,7 @@ public class ReadSnapshotRegionTest {
     DoFn.OutputReceiver<ByteKeyRange> receiver = mock(DoFn.OutputReceiver.class);
 
     ReadSnapshotRegion fn = new ReadSnapshotRegion(true);
-    fn.splitRestriction(regionConfig, range, receiver);
+    fn.splitRestriction(testRegionConfig, range, receiver);
 
     verify(receiver, times(1)).output(range);
   }
@@ -146,7 +177,13 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testSplitRestriction_WithSplit() throws Exception {
-    when(regionConfig.getRegionSize()).thenReturn(1500L * 1024 * 1024); // ~1.5 GB -> 3 splits
+    RegionConfig testRegionConfig =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(regionInfo)
+            .setTableDescriptor(regionConfig.getTableDescriptor())
+            .setRegionSize(1500L * 1024 * 1024) // ~1.5 GB -> 3 splits
+            .build();
 
     ByteKeyRange range =
         ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.copyFrom("z".getBytes()));
@@ -154,7 +191,7 @@ public class ReadSnapshotRegionTest {
     DoFn.OutputReceiver<ByteKeyRange> receiver = mock(DoFn.OutputReceiver.class);
 
     ReadSnapshotRegion fn = new ReadSnapshotRegion(true);
-    fn.splitRestriction(regionConfig, range, receiver);
+    fn.splitRestriction(testRegionConfig, range, receiver);
 
     verify(receiver, times(3)).output(org.mockito.ArgumentMatchers.any(ByteKeyRange.class));
   }
@@ -165,7 +202,7 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testSplitRestriction_Exception() throws Exception {
-    when(regionConfig.getRegionSize()).thenThrow(new RuntimeException("test exception"));
+    RegionConfig testRegionConfig = new ThrowingRegionConfig(regionConfig);
 
     ByteKeyRange range =
         ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.copyFrom("z".getBytes()));
@@ -173,9 +210,42 @@ public class ReadSnapshotRegionTest {
     DoFn.OutputReceiver<ByteKeyRange> receiver = mock(DoFn.OutputReceiver.class);
 
     ReadSnapshotRegion fn = new ReadSnapshotRegion(true);
-    fn.splitRestriction(regionConfig, range, receiver);
+    fn.splitRestriction(testRegionConfig, range, receiver);
 
     verify(receiver, times(1)).output(range);
+  }
+
+  static class ThrowingRegionConfig extends RegionConfig {
+    private final RegionConfig delegate;
+
+    public ThrowingRegionConfig(RegionConfig delegate) {
+      this.delegate = delegate;
+    }
+
+    @Override
+    public String getName() {
+      return delegate.getName();
+    }
+
+    @Override
+    public SnapshotConfig getSnapshotConfig() {
+      return delegate.getSnapshotConfig();
+    }
+
+    @Override
+    public org.apache.hadoop.hbase.client.RegionInfo getRegionInfo() {
+      return delegate.getRegionInfo();
+    }
+
+    @Override
+    public org.apache.hadoop.hbase.client.TableDescriptor getTableDescriptor() {
+      return delegate.getTableDescriptor();
+    }
+
+    @Override
+    public Long getRegionSize() {
+      throw new RuntimeException("test exception");
+    }
   }
 
   static class TestReadSnapshotRegion extends ReadSnapshotRegion {

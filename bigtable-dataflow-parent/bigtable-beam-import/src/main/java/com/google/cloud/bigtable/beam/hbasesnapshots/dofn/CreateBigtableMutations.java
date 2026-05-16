@@ -70,7 +70,7 @@ public class CreateBigtableMutations
       @Element KV<SnapshotConfig, Result> element,
       OutputReceiver<KV<String, Iterable<Mutation>>> outputReceiver)
       throws IOException {
-    if (element.getValue().listCells().isEmpty()) {
+    if (element.getValue().listCells() == null || element.getValue().listCells().isEmpty()) {
       return;
     }
     String targetTable = element.getKey().getTableName();
@@ -81,7 +81,7 @@ public class CreateBigtableMutations
     List<Mutation> mutations = new ArrayList<>();
 
     boolean logAndSkipIncompatibleRowMutations =
-        verifyRowMutationThresholds(
+        convertAndValidateThresholds(
             rowKey, element.getValue().listCells(), mutations, snapshotName);
 
     if (!logAndSkipIncompatibleRowMutations && mutations.size() > 0) {
@@ -89,7 +89,7 @@ public class CreateBigtableMutations
     }
   }
 
-  private boolean verifyRowMutationThresholds(
+  private boolean convertAndValidateThresholds(
       byte[] rowKey, List<Cell> cells, List<Mutation> mutations, String snapshotName)
       throws IOException {
     boolean logAndSkipIncompatibleRows = false;

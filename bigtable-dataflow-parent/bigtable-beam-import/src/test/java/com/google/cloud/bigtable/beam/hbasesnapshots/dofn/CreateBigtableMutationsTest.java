@@ -20,7 +20,6 @@ import static org.junit.Assert.assertNotNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.times;
 import static org.mockito.Mockito.verify;
-import static org.mockito.Mockito.when;
 
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
 import java.util.ArrayList;
@@ -50,12 +49,16 @@ public class CreateBigtableMutationsTest {
 
   @Before
   public void setUp() {
-    snapshotConfig = mock(SnapshotConfig.class);
-    result = mock(Result.class);
+    snapshotConfig =
+        SnapshotConfig.builder()
+            .setProjectId("project")
+            .setSourceLocation("source")
+            .setSnapshotName("my-snapshot")
+            .setTableName("my-table")
+            .setRestoreLocation("restore")
+            .setConfigurationDetails(Collections.emptyMap())
+            .build();
     receiver = mock(DoFn.OutputReceiver.class);
-
-    when(snapshotConfig.getTableName()).thenReturn("my-table");
-    when(snapshotConfig.getSnapshotName()).thenReturn("my-snapshot");
   }
 
   /**
@@ -67,20 +70,35 @@ public class CreateBigtableMutationsTest {
     byte[] rowKey = "row-key".getBytes();
     Cell cell = new KeyValue(rowKey, "cf".getBytes(), "qual".getBytes(), "val".getBytes());
 
-    when(result.listCells()).thenReturn(Collections.singletonList(cell));
-    when(result.getRow()).thenReturn(rowKey);
+    result = Result.create(Collections.singletonList(cell));
 
     CreateBigtableMutations fn = new CreateBigtableMutations(100, false, 0L, false, 0, false, 0);
 
     fn.processElement(KV.of(snapshotConfig, result), receiver);
 
-    verify(receiver, times(1)).output(Mockito.any());
+    ArgumentCaptor<KV<String, Iterable<Mutation>>> captor = ArgumentCaptor.forClass(KV.class);
+    verify(receiver, times(1)).output(captor.capture());
+
+    KV<String, Iterable<Mutation>> output = captor.getValue();
+    assertEquals("my-table", output.getKey());
+
+    Iterator<Mutation> iterator = output.getValue().iterator();
+    assertEquals(true, iterator.hasNext());
+    Mutation mutation = iterator.next();
+    assertEquals("row-key", new String(mutation.getRow()));
+    // Validate cells in mutation
+    List<Cell> cells = mutation.getFamilyCellMap().values().iterator().next();
+    assertEquals(1, cells.size());
+    Cell c = cells.get(0);
+    assertEquals(
+        "qual", new String(c.getQualifierArray(), c.getQualifierOffset(), c.getQualifierLength()));
+    assertEquals(false, iterator.hasNext());
   }
 
   /** Tests that {@link CreateBigtableMutations#processElement} skips results with no cells. */
   @Test
   public void testProcessElement_emptyCells() throws Exception {
-    when(result.listCells()).thenReturn(Collections.emptyList());
+    result = Result.create(Collections.<Cell>emptyList());
 
     CreateBigtableMutations fn = new CreateBigtableMutations(100, false, 0L, false, 0, false, 0);
 
@@ -99,8 +117,7 @@ public class CreateBigtableMutationsTest {
     byte[] largeValue = new byte[1000];
     Cell cell = new KeyValue(rowKey, "cf".getBytes(), "qual".getBytes(), largeValue);
 
-    when(result.listCells()).thenReturn(Collections.singletonList(cell));
-    when(result.getRow()).thenReturn(rowKey);
+    result = Result.create(Collections.singletonList(cell));
 
     CreateBigtableMutations fn =
         new CreateBigtableMutations(
@@ -121,8 +138,7 @@ public class CreateBigtableMutationsTest {
     byte[] rowKey = "row-key".getBytes();
     Cell cell = new KeyValue(rowKey, "cf".getBytes(), "qual".getBytes(), "val".getBytes());
 
-    when(result.listCells()).thenReturn(Collections.singletonList(cell));
-    when(result.getRow()).thenReturn(rowKey);
+    result = Result.create(Collections.singletonList(cell));
 
     CreateBigtableMutations fn =
         new CreateBigtableMutations(
@@ -143,8 +159,7 @@ public class CreateBigtableMutationsTest {
     byte[] rowKey = "row-key".getBytes(); // 7 bytes
     Cell cell = new KeyValue(rowKey, "cf".getBytes(), "qual".getBytes(), "val".getBytes());
 
-    when(result.listCells()).thenReturn(Collections.singletonList(cell));
-    when(result.getRow()).thenReturn(rowKey);
+    result = Result.create(Collections.singletonList(cell));
 
     CreateBigtableMutations fn =
         new CreateBigtableMutations(
@@ -170,8 +185,7 @@ public class CreateBigtableMutationsTest {
     cells.add(cell1);
     cells.add(cell2);
 
-    when(result.listCells()).thenReturn(cells);
-    when(result.getRow()).thenReturn(rowKey);
+    result = Result.create(cells);
 
     CreateBigtableMutations fn =
         new CreateBigtableMutations(
@@ -188,11 +202,28 @@ public class CreateBigtableMutationsTest {
     assertNotNull(output);
 
     Iterator<Mutation> iterator = output.getValue().iterator();
-    int count = 0;
-    while (iterator.hasNext()) {
-      iterator.next();
-      count++;
-    }
-    assertEquals(2, count);
+    assertEquals(true, iterator.hasNext());
+    Mutation mutation1 = iterator.next();
+    assertEquals("row-key", new String(mutation1.getRow()));
+    // Validate cells in mutation1
+    List<Cell> cells1 = mutation1.getFamilyCellMap().values().iterator().next();
+    assertEquals(1, cells1.size());
+    Cell c1 = cells1.get(0);
+    assertEquals(
+        "qual1",
+        new String(c1.getQualifierArray(), c1.getQualifierOffset(), c1.getQualifierLength()));
+
+    assertEquals(true, iterator.hasNext());
+    Mutation mutation2 = iterator.next();
+    assertEquals("row-key", new String(mutation2.getRow()));
+    // Validate cells in mutation2
+    List<Cell> cells2 = mutation2.getFamilyCellMap().values().iterator().next();
+    assertEquals(1, cells2.size());
+    Cell c2 = cells2.get(0);
+    assertEquals(
+        "qual2",
+        new String(c2.getQualifierArray(), c2.getQualifierOffset(), c2.getQualifierLength()));
+
+    assertEquals(false, iterator.hasNext());
   }
 }
