@@ -91,7 +91,7 @@ public class HBaseRegionScanner implements AutoCloseable {
     try {
       this.region.initialize();
       this.scanner = this.region.getScanner(scan);
-      this.values = new ArrayList();
+      this.values = new ArrayList<>();
 
       this.region.startRegionOperation();
       this.regionOperationStarted = true;
