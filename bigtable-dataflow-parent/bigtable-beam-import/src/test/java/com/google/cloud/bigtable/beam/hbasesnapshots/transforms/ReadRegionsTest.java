@@ -120,8 +120,10 @@ public class ReadRegionsTest {
             .setName("region2")
             .build();
 
-    int shard1 = new BigInteger(ri1.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
-    int shard2 = new BigInteger(ri2.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
+    int shard1 =
+        new BigInteger(1, ri1.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
+    int shard2 =
+        new BigInteger(1, ri2.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
 
     int targetShard = shard1;
 

@@ -106,7 +106,9 @@ public class ReadRegions
 
   static boolean isRegionSelected(RegionConfig rc, int numShards, int shardIndex) {
     byte[] regionName = rc.getRegionInfo().getEncodedNameAsBytes();
-    long remainder = new BigInteger(regionName).mod(BigInteger.valueOf(numShards)).longValue();
+    // Use signum=1 to force the byte array to be interpreted as a positive magnitude,
+    // avoiding negative numbers and potential sharding skews.
+    long remainder = new BigInteger(1, regionName).mod(BigInteger.valueOf(numShards)).longValue();
     return remainder == shardIndex;
   }
 
