@@ -54,6 +54,11 @@ public class RestoreSnapshot extends DoFn<SnapshotConfig, SnapshotConfig> {
     Configuration configuration = snapshotConfig.getConfiguration();
     LOG.info("RestoreSnapshot - sourcePath:{} restorePath: {}", sourcePath, restorePath);
     FileSystem fileSystem = sourcePath.getFileSystem(configuration);
+    // Delete restore path if it exists to ensure idempotency on bundle retries.
+    if (fileSystem.exists(restorePath)) {
+      LOG.info("Restore path {} already exists, deleting it for idempotency", restorePath);
+      fileSystem.delete(restorePath, true);
+    }
     RestoreSnapshotHelper.copySnapshotForScanner(
         configuration, fileSystem, sourcePath, restorePath, snapshotConfig.getSnapshotName());
   }

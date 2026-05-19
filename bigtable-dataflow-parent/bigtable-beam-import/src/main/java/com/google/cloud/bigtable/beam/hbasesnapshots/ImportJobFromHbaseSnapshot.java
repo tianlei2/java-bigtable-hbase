@@ -82,6 +82,8 @@ import org.apache.hadoop.hbase.io.ImmutableBytesWritable;
  * Note that in the case of job failures, the temp files generated in the .restore-$JOB_NAME
  * directory under the snapshot export bucket will not get deleted. Hence one need to either launch
  * a replacement job with the same jobName to re-run the job or manually delete this directory.
+ * Additionally, it is highly recommended to set a GCS Lifecycle TTL (e.g., 7 days) on the bucket
+ * used for the restore path to automatically clean up any orphaned files.
  */
 @InternalExtensionOnly
 public class ImportJobFromHbaseSnapshot {
@@ -237,11 +239,12 @@ public class ImportJobFromHbaseSnapshot {
 
     LOG.info("Building Pipeline");
     Pipeline pipeline = null;
+    ImportConfig importConfig = null;
     // Maintain Backward compatibility until deprecation
     if (options.getSnapshotName() != null && !options.getSnapshotName().isEmpty()) {
       pipeline = buildPipeline(options);
     } else {
-      ImportConfig importConfig =
+      importConfig =
           options.getImportConfigFilePath() != null
               ? buildImportConfigFromConfigFile(options.getImportConfigFilePath())
               : buildImportConfigFromPipelineOptions(options, options.as(GcsOptions.class));
@@ -255,7 +258,6 @@ public class ImportJobFromHbaseSnapshot {
 
     LOG.info("Running Pipeline");
     PipelineResult result = pipeline.run();
-
     if (options.getWait()) {
       Utils.waitForPipelineToFinish(result);
     }
