@@ -140,8 +140,7 @@ public class HBaseSnapshotRestoreTool {
     Path sourcePath = snapshotConfig.getSourcePath();
     Path restorePath = snapshotConfig.getRestorePath();
     Configuration configuration = snapshotConfig.getConfiguration();
-    LOG.info(
-        "RestoreSnapshot - sourcePath:{" + sourcePath + "} restorePath: {" + restorePath + "}");
+    LOG.info("RestoreSnapshot - sourcePath:{} restorePath: {}", sourcePath, restorePath);
     FileSystem fileSystem = sourcePath.getFileSystem(configuration);
     RestoreSnapshotHelper.copySnapshotForScanner(
         configuration, fileSystem, sourcePath, restorePath, snapshotConfig.getSnapshotName());
