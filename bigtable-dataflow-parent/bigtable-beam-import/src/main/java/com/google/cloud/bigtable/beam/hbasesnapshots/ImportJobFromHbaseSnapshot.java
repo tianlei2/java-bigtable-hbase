@@ -357,8 +357,9 @@ public class ImportJobFromHbaseSnapshot {
         TemplateUtils.buildImportConfig(options, "HBaseSnapshotImportJob");
     if (importConfig.getBigtableConfiguration() != null) {
       CloudBigtableTableConfiguration.Builder builder = bigtableConfiguration.toBuilder();
-      for (Map.Entry<String, String> entry : importConfig.getBigtableConfiguration().entrySet())
+      for (Map.Entry<String, String> entry : importConfig.getBigtableConfiguration().entrySet()) {
         builder = builder.withConfiguration(entry.getKey(), entry.getValue());
+      }
       bigtableConfiguration = builder.build();
     }
 
