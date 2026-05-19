@@ -48,16 +48,18 @@ public class HBaseRegionScanner implements AutoCloseable {
   private HRegion region;
   private RegionScanner scanner;
   private final List<Cell> values;
-  boolean hasMore = true;
+  private boolean regionOperationStarted = false;
+  private boolean hasMore = true;
 
   public HBaseRegionScanner(
-      Configuration conf,
+      Configuration originalConf,
       FileSystem fs,
       Path rootDir,
       TableDescriptor htd,
       RegionInfo hri,
       Scan scan)
       throws IOException {
+    Configuration conf = new Configuration(originalConf);
     scan.setIsolationLevel(IsolationLevel.READ_UNCOMMITTED);
     htd = TableDescriptorBuilder.newBuilder(htd).setReadOnly(true).build();
     this.region =
@@ -73,12 +75,30 @@ public class HBaseRegionScanner implements AutoCloseable {
     conf.set("hfile.block.cache.policy", "IndexOnlyLRU");
     conf.setIfUnset("hfile.onheap.block.cache.fixed.size", String.valueOf(33554432L));
     conf.unset("hbase.bucketcache.ioengine");
+    // Disable background threads (compactions and cache flushes) to prevent leaks on workers.
+    conf.setInt("hbase.hstore.compactionThreshold", 10000);
+    conf.setLong("hbase.regionserver.optionalcacheflushinterval", 0);
+    conf.setInt("hbase.client.retries.number", 3);
 
-    this.region.initialize();
-    this.scanner = this.region.getScanner(scan);
-    this.values = new ArrayList();
+    // Wrap in try-catch to ensure close() is called on failure, avoiding leaks.
+    try {
+      this.region.initialize();
+      this.scanner = this.region.getScanner(scan);
+      this.values = new ArrayList();
 
-    this.region.startRegionOperation();
+      this.region.startRegionOperation();
+      this.regionOperationStarted = true;
+    } catch (IOException e) {
+      LOG.error("Failed to initialize HBaseRegionScanner", e);
+      if (this.region != null) {
+        try {
+          this.region.close(true);
+        } catch (IOException e2) {
+          LOG.warn("Exception while closing region after initialization failure", e2);
+        }
+      }
+      throw e;
+    }
   }
 
   public void close() {
@@ -93,7 +113,9 @@ public class HBaseRegionScanner implements AutoCloseable {
 
     if (this.region != null) {
       try {
-        this.region.closeRegionOperation();
+        if (this.regionOperationStarted) {
+          this.region.closeRegionOperation();
+        }
         this.region.close(true);
         this.region = null;
       } catch (IOException var2) {
