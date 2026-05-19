@@ -15,9 +15,11 @@
  */
 package com.google.cloud.bigtable.beam.hbasesnapshots.dofn;
 
+import com.google.cloud.bigtable.beam.hbasesnapshots.SnapshotUtils;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.RegionConfig;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
 import com.google.cloud.bigtable.beam.hbasesnapshots.transforms.HbaseRegionSplitTracker;
+import java.util.Map;
 import org.apache.beam.sdk.io.range.ByteKey;
 import org.apache.beam.sdk.io.range.ByteKeyRange;
 import org.apache.beam.sdk.transforms.DoFn;
@@ -42,9 +44,19 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
   private static final long BYTES_PER_GB = 1024 * 1024 * 1024;
 
   private final boolean useDynamicSplitting;
+  private transient Map<Map<String, String>, Configuration> configCache;
 
   public ReadSnapshotRegion(boolean useDynamicSplitting) {
     this.useDynamicSplitting = useDynamicSplitting;
+  }
+
+  // Beam reuses DoFn instances for multiple elements. Initializing the cache in @Setup
+  // ensures that we only create the cache once per DoFn instance lifecycle (per worker thread),
+  // avoiding heavy XML parsing overhead for Configuration while also avoiding static state
+  // and ensuring thread safety since Beam isolates DoFn instances.
+  @Setup
+  public void setup() {
+    configCache = new java.util.HashMap<>();
   }
 
   @ProcessElement
@@ -54,7 +66,13 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
       RestrictionTracker<ByteKeyRange, ByteKey> tracker)
       throws Exception {
 
-    try (HBaseRegionScanner scanner = newScanner(regionConfig, tracker.currentRestriction())) {
+    Map<String, String> configDetails = regionConfig.getSnapshotConfig().getConfigurationDetails();
+    Configuration configuration =
+        configCache.computeIfAbsent(configDetails, SnapshotUtils::getHBaseConfiguration);
+
+    // Use try-with-resources to ensure scanner is closed and resources are released.
+    try (HBaseRegionScanner scanner =
+        newScanner(regionConfig, tracker.currentRestriction(), configuration)) {
       for (Result result = scanner.next(); result != null; result = scanner.next()) {
         if (tracker.tryClaim(ByteKey.copyFrom(result.getRow()))) {
           outputReceiver.output(KV.of(regionConfig.getSnapshotConfig(), result));
@@ -62,12 +80,13 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
           return;
         }
       }
-      // Scanner exhausted naturally. Claim the end key to mark done.
-      tracker.tryClaim(tracker.currentRestriction().getEndKey());
+      // Signal completion of the range.
+      tracker.tryClaim(ByteKey.EMPTY);
     }
   }
 
-  HBaseRegionScanner newScanner(RegionConfig regionConfig, ByteKeyRange byteKeyRange)
+  HBaseRegionScanner newScanner(
+      RegionConfig regionConfig, ByteKeyRange byteKeyRange, Configuration configuration)
       throws Exception {
     Scan scan =
         new Scan()
@@ -80,7 +99,6 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
 
     Path sourcePath = snapshotConfig.getSourcePath();
     Path restorePath = snapshotConfig.getRestorePath();
-    Configuration configuration = snapshotConfig.getConfiguration();
     FileSystem fileSystem = sourcePath.getFileSystem(configuration);
 
     return new HBaseRegionScanner(
@@ -94,6 +112,7 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
 
   @GetInitialRestriction
   public ByteKeyRange getInitialRange(@Element RegionConfig regionConfig) {
+    byte[] endKey = regionConfig.getRegionInfo().getEndKey();
     return ByteKeyRange.of(
         ByteKey.copyFrom(regionConfig.getRegionInfo().getStartKey()),
         ByteKey.copyFrom(regionConfig.getRegionInfo().getEndKey()));
@@ -119,6 +138,15 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
       @Element RegionConfig regionConfig,
       @Restriction ByteKeyRange range,
       OutputReceiver<ByteKeyRange> outputReceiver) {
+    byte[] originalEndKey = regionConfig.getRegionInfo().getEndKey();
+    if (originalEndKey == null || originalEndKey.length == 0) {
+      LOG.info(
+          "Skipping splitting for boundary region: {}",
+          regionConfig.getRegionInfo().getEncodedName());
+      outputReceiver.output(range);
+      return;
+    }
+
     try {
       int numSplits = getSplits(regionConfig.getRegionSize());
       LOG.info(
@@ -130,12 +158,21 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
           numSplits);
       if (numSplits > 1) {
         RegionSplitter.UniformSplit uniformSplit = new RegionSplitter.UniformSplit();
-        byte[][] splits =
-            uniformSplit.split(
-                range.getStartKey().getBytes(),
-                range.getEndKey().getBytes(),
-                getSplits(regionConfig.getRegionSize()),
-                true);
+        byte[] startKey = range.getStartKey().getBytes();
+        byte[] endKey = range.getEndKey().getBytes();
+
+        // Handle empty start key if it's the absolute first region
+        if (startKey.length == 0) {
+          startKey = new byte[endKey.length];
+        }
+
+        byte[][] splits = uniformSplit.split(startKey, endKey, numSplits, true);
+
+        // Preserve the absolute start boundary if necessary
+        if (range.getStartKey().isEmpty()) {
+          splits[0] = new byte[0];
+        }
+
         for (int i = 0; i < splits.length - 1; i++) {
           outputReceiver.output(
               ByteKeyRange.of(ByteKey.copyFrom(splits[i]), ByteKey.copyFrom(splits[i + 1])));
@@ -147,7 +184,8 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
       LOG.warn(
           "Unable to split range for region:{} in Snapshot:{}",
           regionConfig.getRegionInfo().getEncodedName(),
-          regionConfig.getSnapshotConfig().getSnapshotName());
+          regionConfig.getSnapshotConfig().getSnapshotName(),
+          ex);
       outputReceiver.output(range);
     }
   }

@@ -50,7 +50,7 @@ public class ReadSnapshotRegionTest {
             .setSnapshotName("test-snapshot")
             .setTableName("test-table")
             .setRestoreLocation("gs://test-bucket/restore")
-            .setConfigurationDetails(new java.util.HashMap<>())
+            .setConfigurationDetails(java.util.Collections.emptyMap())
             .build();
 
     regionInfo =
@@ -92,6 +92,7 @@ public class ReadSnapshotRegionTest {
     when(scanner.next()).thenReturn(result1, result2, null);
 
     ReadSnapshotRegion fn = new TestReadSnapshotRegion(true, scanner);
+    fn.setup();
 
     DoFn.OutputReceiver<KV<SnapshotConfig, Result>> receiver = mock(DoFn.OutputReceiver.class);
 
@@ -137,6 +138,7 @@ public class ReadSnapshotRegionTest {
             });
 
     ReadSnapshotRegion fn = new TestReadSnapshotRegion(true, scanner);
+    fn.setup();
 
     DoFn.OutputReceiver<KV<SnapshotConfig, Result>> receiver = mock(DoFn.OutputReceiver.class);
 
@@ -177,10 +179,18 @@ public class ReadSnapshotRegionTest {
    */
   @Test
   public void testSplitRestriction_WithSplit() throws Exception {
+    org.apache.hadoop.hbase.client.RegionInfo hriWithEndKey =
+        org.apache.hadoop.hbase.client.RegionInfoBuilder.newBuilder(
+                org.apache.hadoop.hbase.TableName.valueOf("test-table"))
+            .setRegionId(12345L)
+            .setStartKey("a".getBytes())
+            .setEndKey("z".getBytes())
+            .build();
+
     RegionConfig testRegionConfig =
         RegionConfig.builder()
             .setSnapshotConfig(snapshotConfig)
-            .setRegionInfo(regionInfo)
+            .setRegionInfo(hriWithEndKey)
             .setTableDescriptor(regionConfig.getTableDescriptor())
             .setRegionSize(1500L * 1024 * 1024) // ~1.5 GB -> 3 splits
             .build();
@@ -257,8 +267,75 @@ public class ReadSnapshotRegionTest {
     }
 
     @Override
-    HBaseRegionScanner newScanner(RegionConfig regionConfig, ByteKeyRange byteKeyRange) {
+    HBaseRegionScanner newScanner(
+        RegionConfig regionConfig,
+        ByteKeyRange byteKeyRange,
+        org.apache.hadoop.conf.Configuration configuration) {
       return mockScanner;
     }
+  }
+
+  /**
+   * Tests that {@link ReadSnapshotRegion#splitRestriction} handles empty start keys (infinity) by
+   * padding them to match the length of the end key.
+   */
+  @Test
+  public void testSplitRestriction_EmptyStartKey() throws Exception {
+    org.apache.hadoop.hbase.client.RegionInfo hriEmptyStart =
+        org.apache.hadoop.hbase.client.RegionInfoBuilder.newBuilder(
+                org.apache.hadoop.hbase.TableName.valueOf("test-table"))
+            .setRegionId(12345L)
+            .setStartKey(new byte[0])
+            .setEndKey("z".getBytes())
+            .build();
+
+    RegionConfig testRegionConfig =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(hriEmptyStart)
+            .setTableDescriptor(regionConfig.getTableDescriptor())
+            .setRegionSize(1500L * 1024 * 1024) // ~1.5 GB -> 3 splits
+            .build();
+
+    ByteKeyRange range = ByteKeyRange.of(ByteKey.EMPTY, ByteKey.copyFrom("z".getBytes()));
+
+    DoFn.OutputReceiver<ByteKeyRange> receiver = mock(DoFn.OutputReceiver.class);
+
+    ReadSnapshotRegion fn = new ReadSnapshotRegion(true);
+    fn.splitRestriction(testRegionConfig, range, receiver);
+
+    verify(receiver, times(3)).output(org.mockito.ArgumentMatchers.any(ByteKeyRange.class));
+  }
+
+  /**
+   * Tests that {@link ReadSnapshotRegion#splitRestriction} skips splitting for boundary regions
+   * with empty end keys.
+   */
+  @Test
+  public void testSplitRestriction_EmptyEndKey() throws Exception {
+    org.apache.hadoop.hbase.client.RegionInfo hriEmptyEnd =
+        org.apache.hadoop.hbase.client.RegionInfoBuilder.newBuilder(
+                org.apache.hadoop.hbase.TableName.valueOf("test-table"))
+            .setRegionId(12345L)
+            .setStartKey("a".getBytes())
+            .setEndKey(new byte[0])
+            .build();
+
+    RegionConfig testRegionConfig =
+        RegionConfig.builder()
+            .setSnapshotConfig(snapshotConfig)
+            .setRegionInfo(hriEmptyEnd)
+            .setTableDescriptor(regionConfig.getTableDescriptor())
+            .setRegionSize(1500L * 1024 * 1024) // ~1.5 GB -> 3 splits
+            .build();
+
+    ByteKeyRange range = ByteKeyRange.of(ByteKey.copyFrom("a".getBytes()), ByteKey.EMPTY);
+
+    DoFn.OutputReceiver<ByteKeyRange> receiver = mock(DoFn.OutputReceiver.class);
+
+    ReadSnapshotRegion fn = new ReadSnapshotRegion(true);
+    fn.splitRestriction(testRegionConfig, range, receiver);
+
+    verify(receiver, times(1)).output(org.mockito.ArgumentMatchers.any(ByteKeyRange.class));
   }
 }
