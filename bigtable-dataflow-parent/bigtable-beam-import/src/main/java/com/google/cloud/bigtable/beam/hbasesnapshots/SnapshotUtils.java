@@ -64,8 +64,6 @@ public class SnapshotUtils {
   private static final String SNAPSHOT_MANIFEST_DIRECTORY = ".hbase-snapshot";
   private static final String GCS_SCHEME = "gs";
   private static final Sleeper sleeper = Sleeper.DEFAULT;
-  private static final Object lock = new Object();
-  private static volatile Configuration hbaseConfiguration;
 
   private SnapshotUtils() {}
 
@@ -134,13 +132,10 @@ public class SnapshotUtils {
   }
 
   public static Configuration getHBaseConfiguration(Map<String, String> configurations) {
-    if (hbaseConfiguration == null) {
-      synchronized (lock) {
-        if (hbaseConfiguration == null)
-          hbaseConfiguration = createHbaseConfiguration(configurations);
-      }
+    if (configurations == null) {
+      configurations = new java.util.HashMap<>();
     }
-    return hbaseConfiguration;
+    return createHbaseConfiguration(configurations);
   }
 
   private static Configuration createHbaseConfiguration(Map<String, String> configurations) {
@@ -175,7 +170,7 @@ public class SnapshotUtils {
                 SnapshotConfig.builder()
                     .setProjectId(projectId)
                     .setSourceLocation(sourcePath)
-                    .setRestoreLocation(restorePath)
+                    .setRestoreLocation(restorePath + "/" + snapshotInfo.getSnapshotName())
                     .setSnapshotName(snapshotInfo.getSnapshotName())
                     .setTableName(snapshotInfo.getbigtableTableName())
                     .setConfigurationDetails(configurations)
@@ -229,11 +224,12 @@ public class SnapshotUtils {
   public static Map<String, String> getSnapshotsFromString(String snapshotNames) {
     Map<String, String> snapshots = new HashMap<>();
     for (String snapshotInfo : snapshotNames.split(",")) {
+      snapshotInfo = snapshotInfo.trim();
       String[] snapshotWithTableName = snapshotInfo.split(":");
       if (snapshotWithTableName.length == 2)
-        snapshots.put(snapshotWithTableName[0], snapshotWithTableName[1]);
+        snapshots.put(snapshotWithTableName[0].trim(), snapshotWithTableName[1].trim());
       else if (snapshotWithTableName.length == 1)
-        snapshots.put(snapshotWithTableName[0], snapshotWithTableName[0]);
+        snapshots.put(snapshotWithTableName[0].trim(), snapshotWithTableName[0].trim());
       else
         throw new IllegalArgumentException(
             "Invalid specification format for snapshots. Expected format is"
@@ -268,11 +264,35 @@ public class SnapshotUtils {
     GcsPath gcsPath = GcsPath.fromUri(importSnapshotpath);
     Map<String, String> snapshots = new HashMap<>();
 
+    String gcsPrefix = gcsPath.getObject();
+    Pattern prefixPattern = null;
+
+    // Optimize prefix matching by passing simple globs or literals to GCS API directly,
+    // reducing the number of objects fetched and processed in memory.
+    if (prefix.equals("*")) {
+      // List all
+    } else if (prefix.endsWith("*")
+        && !prefix.substring(0, prefix.length() - 1).contains("*")
+        && !prefix.contains("+")
+        && !prefix.contains("?")) {
+      // Simple glob like "prefix*"
+      String literal = prefix.substring(0, prefix.length() - 1);
+      gcsPrefix = gcsPrefix + "/" + literal;
+      prefixPattern = Pattern.compile("^" + Pattern.quote(literal) + ".*");
+    } else if (!isRegex(prefix)) {
+      // Literal match
+      gcsPrefix = gcsPrefix + "/" + prefix;
+      prefixPattern = Pattern.compile("^" + Pattern.quote(prefix) + "$");
+    } else {
+      // Complex regex, list all and filter in memory
+      prefixPattern = Pattern.compile(prefix);
+    }
+
     List<StorageObject> allObjects = new java.util.ArrayList<>();
     String pageToken = null;
     do {
       com.google.api.services.storage.model.Objects objects =
-          gcsUtil.listObjects(gcsPath.getBucket(), gcsPath.getObject(), pageToken);
+          gcsUtil.listObjects(gcsPath.getBucket(), gcsPrefix, pageToken);
       if (objects.getItems() == null) {
         break;
       }
@@ -280,16 +300,16 @@ public class SnapshotUtils {
       pageToken = objects.getNextPageToken();
     } while (pageToken != null);
 
-    if (allObjects.isEmpty())
-      throw new IllegalStateException(
-          String.format("Snapshot path %s does not contain any snapshots", importSnapshotpath));
+    if (allObjects.isEmpty()) {
+      LOG.warn("Snapshot path {} does not contain any snapshots", importSnapshotpath);
+      return snapshots;
+    }
 
     // Build a pattern for object portion e.g if path is
     // gs://sym-bucket/snapshots/20220309230526/.hbase-snapshot
     // the object portion would be snapshots/60G/20220309230526/.hbase-snapshot
     Pattern pathPattern =
         Pattern.compile(String.format("%s/(.+?/)", Pattern.quote(gcsPath.getObject())));
-    Pattern prefixPattern = prefix.equals("*") ? null : Pattern.compile(prefix);
     Matcher pathMatcher = null;
     String snapshotName = null;
     for (StorageObject object : allObjects) {
