@@ -21,6 +21,7 @@ import java.io.File;
 import org.apache.beam.sdk.testing.TestPipeline;
 import org.apache.beam.sdk.transforms.Create;
 import org.apache.beam.sdk.transforms.ParDo;
+import org.apache.beam.sdk.util.Sleeper;
 import org.junit.Assert;
 import org.junit.ClassRule;
 import org.junit.Rule;
@@ -61,11 +62,25 @@ public class CleanUpRestoredSnapshotsTest {
    *
    * @throws Exception
    */
+  // Use a custom subclass to override the Sleeper and avoid sleeping for ~35 seconds
+  // during tests that trigger the retry loop (due to hardcoded exponential backoff).
+  private static class FastCleanupRestoredSnapshots extends CleanupRestoredSnapshots {
+    @Override
+    Sleeper getSleeper() {
+      return new Sleeper() {
+        @Override
+        public void sleep(long millis) throws InterruptedException {
+          // Do nothing!
+        }
+      };
+    }
+  }
+
   @Test
   public void testDeleteRestoredSnapshotWithInvalidPath() throws Exception {
     pipeline
         .apply("CreateInput", Create.of(SnapshotTestHelper.newSnapshotConfig("invalid_path")))
-        .apply("DeleteSnapshot", ParDo.of(new CleanupRestoredSnapshots()));
+        .apply("DeleteSnapshot", ParDo.of(new FastCleanupRestoredSnapshots()));
 
     // The pipeline should run successfully without throwing an exception.
     // The CleanupRestoredSnapshots DoFn handles exceptions internally (logs them after retries)

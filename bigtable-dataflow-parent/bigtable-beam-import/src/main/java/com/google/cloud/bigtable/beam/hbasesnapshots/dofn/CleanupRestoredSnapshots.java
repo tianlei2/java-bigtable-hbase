@@ -19,6 +19,8 @@ import com.google.api.core.InternalApi;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
 import com.google.common.annotations.VisibleForTesting;
 import java.io.IOException;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.util.BackOff;
 import org.apache.beam.sdk.util.FluentBackoff;
@@ -35,6 +37,8 @@ import org.slf4j.LoggerFactory;
 public class CleanupRestoredSnapshots extends DoFn<SnapshotConfig, Void> {
 
   private static final Logger LOG = LoggerFactory.getLogger(CleanupRestoredSnapshots.class);
+  private final Counter failedCleanups =
+      Metrics.counter(CleanupRestoredSnapshots.class, "failed_cleanups");
 
   @ProcessElement
   public void processElement(
@@ -44,7 +48,7 @@ public class CleanupRestoredSnapshots extends DoFn<SnapshotConfig, Void> {
     FluentBackoff backoff =
         FluentBackoff.DEFAULT.withInitialBackoff(Duration.standardSeconds(5)).withMaxRetries(3);
 
-    Sleeper sleeper = Sleeper.DEFAULT;
+    Sleeper sleeper = getSleeper();
     BackOff executionBackoff = backoff.backoff();
 
     while (true) {
@@ -59,6 +63,7 @@ public class CleanupRestoredSnapshots extends DoFn<SnapshotConfig, Void> {
               "Failed to cleanup snapshot after retries. Manual cleanup required for path: {}",
               snapshotConfig.getRestorePath(),
               ex);
+          failedCleanups.inc();
           return; // Give up but don't fail the job
         }
 
@@ -71,6 +76,11 @@ public class CleanupRestoredSnapshots extends DoFn<SnapshotConfig, Void> {
         }
       }
     }
+  }
+
+  @VisibleForTesting
+  Sleeper getSleeper() {
+    return Sleeper.DEFAULT;
   }
 
   /**
