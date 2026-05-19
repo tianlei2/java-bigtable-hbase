@@ -44,29 +44,37 @@ public class RegionConfigCoder extends Coder<RegionConfig> {
 
   @Override
   public void encode(RegionConfig value, OutputStream outStream) throws IOException {
+    // 1. Encode SnapshotConfig using standard SerializableCoder
     snapshotConfigCoder.encode(value.getSnapshotConfig(), outStream);
 
+    // 2. Encode RegionInfo by converting to HBase protobuf and then to byte array
     HBaseProtos.RegionInfo regionInfo = ProtobufUtil.toRegionInfo(value.getRegionInfo());
     byteArrayCoder.encode(regionInfo.toByteArray(), outStream);
 
+    // 3. Encode TableDescriptor by converting to HBase protobuf and then to byte array
     HBaseProtos.TableSchema tableSchema = ProtobufUtil.toTableSchema(value.getTableDescriptor());
     byteArrayCoder.encode(tableSchema.toByteArray(), outStream);
 
+    // 4. Encode region size using variable-length long coder
     longCoder.encode(value.getRegionSize(), outStream);
   }
 
   @Override
   public RegionConfig decode(InputStream inStream) throws IOException {
+    // 1. Decode SnapshotConfig
     SnapshotConfig snapshotConfig = snapshotConfigCoder.decode(inStream);
 
+    // 2. Decode RegionInfo from bytes via HBase protobuf
     byte[] regionInfoBytes = byteArrayCoder.decode(inStream);
     RegionInfo regionInfo =
         ProtobufUtil.toRegionInfo(HBaseProtos.RegionInfo.parseFrom(regionInfoBytes));
 
+    // 3. Decode TableDescriptor from bytes via HBase protobuf
     byte[] tableSchemaBytes = byteArrayCoder.decode(inStream);
     TableDescriptor tableDescriptor =
         ProtobufUtil.toTableDescriptor(TableSchema.parseFrom(tableSchemaBytes));
 
+    // 4. Decode region size
     Long regionSize = longCoder.decode(inStream);
 
     return RegionConfig.builder()

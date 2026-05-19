@@ -54,6 +54,10 @@ public class ImportJobFromHbaseSnapshotTest {
   @Mock GcsUtil gcsUtilMock;
   @Mock Objects gcsObjects;
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromPipelineOptions} throws
+   * exception when source path is missing.
+   */
   @Test
   public void testBuildImportConfigWithMissingSourcePathThrowsException() throws Exception {
     ImportJobFromHbaseSnapshot.ImportOptions options =
@@ -67,6 +71,10 @@ public class ImportJobFromHbaseSnapshotTest {
     ImportJobFromHbaseSnapshot.buildImportConfigFromPipelineOptions(options, gcsOptions);
   }
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromPipelineOptions} throws
+   * exception when snapshots are missing.
+   */
   @Test
   public void testBuildImportConfigWithMissingSnapshotsThrowsException() throws Exception {
     ImportJobFromHbaseSnapshot.ImportOptions options =
@@ -78,6 +86,10 @@ public class ImportJobFromHbaseSnapshotTest {
     ImportJobFromHbaseSnapshot.buildImportConfigFromPipelineOptions(options, gcsOptions);
   }
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromPipelineOptions} correctly
+   * parses snapshots from string.
+   */
   @Test
   public void testBuildImportConfigFromSnapshotsString() throws Exception {
     String sourcePath = "gs://bucket/data/";
@@ -101,6 +113,10 @@ public class ImportJobFromHbaseSnapshotTest {
         .thenReturn(gcsObjects);
   }
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromPipelineOptions} handles
+   * wildcard for all snapshots.
+   */
   @Test
   public void testBuildImportConfigForAllSnapshots() throws Exception {
     String baseObjectPath = "snapshots/20220309230526";
@@ -122,6 +138,10 @@ public class ImportJobFromHbaseSnapshotTest {
     assertThat(importConfig.getSnapshots().size(), is(snapshotList.size()));
   }
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromConfigFile} throws exception
+   * when source path is missing in JSON.
+   */
   @Test
   public void testBuildImportConfigFromJsonFileWithMissingPathThrowsException() throws Exception {
     String config =
@@ -145,6 +165,10 @@ public class ImportJobFromHbaseSnapshotTest {
             options.getImportConfigFilePath());
   }
 
+  /**
+   * Tests that {@link ImportJobFromHbaseSnapshot#buildImportConfigFromConfigFile} correctly parses
+   * config from JSON file.
+   */
   @Test
   public void testBuildImportConfigFromJsonFile() throws Exception {
     String importSnapshotpath = "gs://sym-datastore/snapshots/data/snap_demo";

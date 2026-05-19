@@ -34,6 +34,10 @@ import org.junit.runners.JUnit4;
 @RunWith(JUnit4.class)
 public class TemplateUtilsTest {
 
+  /**
+   * Tests that {@link TemplateUtils#buildImportConfig} sets correct default values for Bigtable
+   * configuration.
+   */
   @Test
   public void testBuildImportConfig_defaults() {
     ImportOptions opts = PipelineOptionsFactory.as(ImportOptions.class);
@@ -54,6 +58,10 @@ public class TemplateUtilsTest {
         configMap.containsKey(BigtableHBaseSettings.BULK_MUTATION_CLOSE_TIMEOUT_MILLISECONDS));
   }
 
+  /**
+   * Tests that {@link TemplateUtils#buildImportConfig} correctly overrides defaults with custom
+   * values provided in options.
+   */
   @Test
   public void testBuildImportConfig_customValues() {
     ImportOptions opts = PipelineOptionsFactory.as(ImportOptions.class);

@@ -77,6 +77,8 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
         if (tracker.tryClaim(ByteKey.copyFrom(result.getRow()))) {
           outputReceiver.output(KV.of(regionConfig.getSnapshotConfig(), result));
         } else {
+          // According to Splittable DoFn contract, when tryClaim returns false,
+          // we must terminate processing immediately and return.
           return;
         }
       }
@@ -88,6 +90,9 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
   HBaseRegionScanner newScanner(
       RegionConfig regionConfig, ByteKeyRange byteKeyRange, Configuration configuration)
       throws Exception {
+    // Create an HBase Scan bounded by the restriction's start and end keys.
+    // Use READ_UNCOMMITTED for performance since snapshots are read-only.
+    // Disable block caching as we are doing a full scan and reuse is unlikely.
     Scan scan =
         new Scan()
             .withStartRow(byteKeyRange.getStartKey().getBytes())
@@ -113,6 +118,7 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
   @GetInitialRestriction
   public ByteKeyRange getInitialRange(@Element RegionConfig regionConfig) {
     byte[] endKey = regionConfig.getRegionInfo().getEndKey();
+    // The initial restriction is the full key range of the HBase region.
     return ByteKeyRange.of(
         ByteKey.copyFrom(regionConfig.getRegionInfo().getStartKey()),
         ByteKey.copyFrom(regionConfig.getRegionInfo().getEndKey()));
@@ -120,6 +126,7 @@ public class ReadSnapshotRegion extends DoFn<RegionConfig, KV<SnapshotConfig, Re
 
   @GetSize
   public double getSize(@Element RegionConfig regionConfig) {
+    // Return the default split size as the work estimate for this restriction.
     return BYTES_PER_SPLIT;
   }
 

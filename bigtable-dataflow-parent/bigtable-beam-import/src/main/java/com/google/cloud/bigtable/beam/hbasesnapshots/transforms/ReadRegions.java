@@ -115,6 +115,7 @@ public class ReadRegions
   @Override
   public PCollection<KV<String, Iterable<Mutation>>> expand(
       PCollection<RegionConfig> regionConfig) {
+    // 1. Resolve coders for the output KV type.
     Pipeline pipeline = regionConfig.getPipeline();
     SchemaCoder<SnapshotConfig> snapshotConfigSchemaCoder;
     Coder<Result> hbaseResultCoder;
@@ -125,6 +126,8 @@ public class ReadRegions
       throw new RuntimeException(e);
     }
 
+    // 2. Apply sharding if enabled. Encoded name is an MD5 hash, so it provides
+    // good distribution across shards.
     PCollection<RegionConfig> maybeShardedRegions = regionConfig;
     if (numShards != null) {
       maybeShardedRegions =
