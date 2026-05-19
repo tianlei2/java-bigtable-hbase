@@ -99,7 +99,7 @@ public class CreateBigtableMutations
               + ", exceeds filter length threshold, "
               + filterLargeRowKeysThresholdBytes
               + ", row key: "
-              + org.apache.hadoop.hbase.util.Bytes.toStringBinary(rowKey));
+              + Bytes.toStringBinary(rowKey));
       droppedRowKeys.inc();
       return;
     }
