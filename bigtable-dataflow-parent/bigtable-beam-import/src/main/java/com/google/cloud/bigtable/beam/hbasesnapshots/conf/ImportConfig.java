@@ -149,15 +149,17 @@ public final class ImportConfig implements Serializable {
     @Override
     public void write(JsonWriter jsonWriter, List<SnapshotInfo> snapshotInfos) throws IOException {
       jsonWriter.beginObject();
-      snapshotInfos.forEach(
-          snapshotInfo -> {
-            try {
-              jsonWriter.name(snapshotInfo.getSnapshotName());
-              jsonWriter.value(snapshotInfo.getbigtableTableName());
-            } catch (IOException e) {
-              throw new RuntimeException(e);
-            }
-          });
+      if (snapshotInfos != null) {
+        snapshotInfos.forEach(
+            snapshotInfo -> {
+              try {
+                jsonWriter.name(snapshotInfo.getSnapshotName());
+                jsonWriter.value(snapshotInfo.getbigtableTableName());
+              } catch (IOException e) {
+                throw new RuntimeException(e);
+              }
+            });
+      }
       jsonWriter.endObject();
     }
 

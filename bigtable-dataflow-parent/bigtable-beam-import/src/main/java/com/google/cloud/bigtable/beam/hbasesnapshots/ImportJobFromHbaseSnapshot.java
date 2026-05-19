@@ -235,7 +235,7 @@ public class ImportJobFromHbaseSnapshot {
         PipelineOptionsFactory.fromArgs(args).withValidation().as(ImportOptions.class);
 
     // To determine the Google Cloud Storage file scheme (gs://)
-    FileSystems.setDefaultPipelineOptions(PipelineOptionsFactory.create().as(GcsOptions.class));
+    FileSystems.setDefaultPipelineOptions(options);
 
     LOG.info("Building Pipeline");
     Pipeline pipeline = null;
