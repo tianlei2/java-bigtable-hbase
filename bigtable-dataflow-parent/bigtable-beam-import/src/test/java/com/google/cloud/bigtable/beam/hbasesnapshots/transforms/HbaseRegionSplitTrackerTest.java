@@ -115,8 +115,8 @@ public class HbaseRegionSplitTrackerTest {
   public void testCheckDone_success() {
     // Claim the start key to initialize
     trackerWithDynamicSplitting.tryClaim(ByteKey.copyFrom("a".getBytes()));
-    // Claim EMPTY to mark as done
-    trackerWithDynamicSplitting.tryClaim(ByteKey.EMPTY);
+    // Claim the end key to mark as done
+    trackerWithDynamicSplitting.tryClaim(ByteKey.copyFrom("z".getBytes()));
 
     trackerWithDynamicSplitting.checkDone(); // Should not throw
   }

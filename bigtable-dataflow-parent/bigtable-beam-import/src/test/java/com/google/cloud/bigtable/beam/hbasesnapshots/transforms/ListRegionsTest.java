@@ -93,6 +93,7 @@ public class ListRegionsTest {
           .thenReturn(regionInfos);
 
       ListRegions.ListRegionsFn fn = new ListRegions.ListRegionsFn();
+      fn.setup();
       fn.processElement(snapshotConfig, receiver);
 
       verify(receiver, times(0)).output(Mockito.any());
@@ -135,6 +136,7 @@ public class ListRegionsTest {
           .thenReturn(regionInfos);
 
       ListRegions.ListRegionsFn fn = new ListRegions.ListRegionsFn();
+      fn.setup();
       fn.processElement(snapshotConfig, receiver);
 
       verify(receiver, times(1)).output(Mockito.any(RegionConfig.class));
@@ -184,6 +186,7 @@ public class ListRegionsTest {
           .thenReturn(regionInfos);
 
       ListRegions.ListRegionsFn fn = new ListRegions.ListRegionsFn();
+      fn.setup();
       fn.processElement(snapshotConfig, receiver);
 
       verify(receiver, times(2)).output(Mockito.any(RegionConfig.class));
