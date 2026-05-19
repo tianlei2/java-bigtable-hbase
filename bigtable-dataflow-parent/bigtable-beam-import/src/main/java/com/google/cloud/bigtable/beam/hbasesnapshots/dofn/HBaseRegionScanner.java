@@ -73,10 +73,17 @@ public class HBaseRegionScanner implements AutoCloseable {
             (RegionServerServices) null);
     this.region.setRestoredRegion(true);
     conf.set("hfile.block.cache.policy", "IndexOnlyLRU");
+    // Set a small default block cache size (32MB). Since we are performing a strictly
+    // sequential scan of the snapshot, we read each block once and don't need a large
+    // cache for data blocks. 32MB is sufficient to hold HFile index blocks while avoiding
+    // OutOfMemory errors on memory-constrained Dataflow workers.
     conf.setIfUnset("hfile.onheap.block.cache.fixed.size", String.valueOf(33554432L));
     conf.unset("hbase.bucketcache.ioengine");
-    // Disable background threads (compactions and cache flushes) to prevent leaks on workers.
+    // Setting a huge compaction threshold (10000) effectively disables compactions.
+    // Since snapshots are read-only, compactions are useless, and background threads
+    // can fail to shut down cleanly during DoFn teardown, causing thread leaks.
     conf.setInt("hbase.hstore.compactionThreshold", 10000);
+    // Set flush interval to 0 to disable periodic flushes.
     conf.setLong("hbase.regionserver.optionalcacheflushinterval", 0);
     conf.setInt("hbase.client.retries.number", 3);
 
@@ -101,6 +108,7 @@ public class HBaseRegionScanner implements AutoCloseable {
     }
   }
 
+  @Override
   public void close() {
     if (this.scanner != null) {
       try {

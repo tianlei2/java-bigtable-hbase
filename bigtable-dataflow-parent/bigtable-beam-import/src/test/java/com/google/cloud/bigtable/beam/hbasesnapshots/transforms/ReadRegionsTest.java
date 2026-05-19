@@ -81,6 +81,7 @@ public class ReadRegionsTest {
    */
   @Test
   public void testShardingWithPipeline() {
+    // 1. Setup configuration and table descriptor
     SnapshotConfig snapshotConfig =
         SnapshotConfig.builder()
             .setProjectId("project")
@@ -96,6 +97,7 @@ public class ReadRegionsTest {
             .setColumnFamily(ColumnFamilyDescriptorBuilder.newBuilder("cf".getBytes()).build())
             .build();
 
+    // 2. Create test regions
     RegionInfo ri1 =
         RegionInfoBuilder.newBuilder(TableName.valueOf("table")).setRegionId(1).build();
 
@@ -120,6 +122,7 @@ public class ReadRegionsTest {
             .setName("region2")
             .build();
 
+    // 3. Calculate expected shards for the regions to determine expected output
     int shard1 =
         new BigInteger(1, ri1.getEncodedNameAsBytes()).mod(BigInteger.valueOf(4)).intValue();
     int shard2 =
@@ -127,6 +130,7 @@ public class ReadRegionsTest {
 
     int targetShard = shard1;
 
+    // 4. Apply the sharding filter in a pipeline
     org.apache.beam.sdk.values.PCollection<RegionConfig> input =
         pipeline.apply(
             Create.of(rc1, rc2)
@@ -136,6 +140,7 @@ public class ReadRegionsTest {
     org.apache.beam.sdk.values.PCollection<RegionConfig> output =
         input.apply(Filter.by(rc -> ReadRegions.isRegionSelected(rc, 4, targetShard)));
 
+    // 5. Verify that only regions belonging to the target shard are selected
     java.util.List<RegionConfig> expected = new java.util.ArrayList<>();
     expected.add(rc1);
     if (shard2 == targetShard) {
@@ -144,6 +149,8 @@ public class ReadRegionsTest {
 
     PAssert.that(output).containsInAnyOrder(expected);
 
+    // PAssert is added as a transform to the pipeline graph. We must call pipeline.run()
+    // to actually execute the pipeline and evaluate the assertions.
     pipeline.run();
   }
 }

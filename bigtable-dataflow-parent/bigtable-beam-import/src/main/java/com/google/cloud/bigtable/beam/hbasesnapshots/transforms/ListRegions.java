@@ -106,11 +106,11 @@ public class ListRegions
       Map<Long, Long> regionsSize = computeRegionSize(snapshotManifest);
       TableDescriptor tableDescriptor = snapshotManifest.getTableDescriptor();
 
-      // Read Region info
+      // Extract region information from the snapshot manifest.
       List<? extends RegionInfo> regionInfos =
           TableSnapshotInputFormatImpl.getRegionInfosFromManifest(snapshotManifest);
 
-      // List the regions
+      // Emit a RegionConfig for each region in the snapshot.
       regionInfos.stream()
           .map(
               regionInfo ->

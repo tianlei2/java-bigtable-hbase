@@ -57,6 +57,9 @@ public class SnapshotUtilsTest {
   @Mock GcsUtil gcsUtilMock;
   @Mock Objects gcsObjects;
 
+  /**
+   * Tests that {@link SnapshotUtils#removeSuffixSlashIfExists} correctly removes trailing slashes.
+   */
   @Test
   public void testRemoveSuffixSlashIfExists() {
     String path = "gs://bucket/prefix";
@@ -65,6 +68,9 @@ public class SnapshotUtilsTest {
     assertThat(SnapshotUtils.removeSuffixSlashIfExists(path + "/"), is(path));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#appendCurrentTimestamp} appends a valid timestamp to the path.
+   */
   @Test
   public void testAppendCurrentTimestamp() {
     String path = "gs://bucket/prefix";
@@ -76,6 +82,9 @@ public class SnapshotUtilsTest {
     assertThat((returnTime - currentTime), lessThan(2L));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getNamedDirectory} returns correct directory path.
+   */
   @Test
   public void testgetNamedDirectory() {
     String path = "gs://bucket/subdir1";
@@ -85,6 +94,9 @@ public class SnapshotUtilsTest {
     assertThat(retValue.startsWith(expectedPath), is(true));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getConfiguration} returns correct config for DataflowRunner.
+   */
   @Test
   public void testGetConfigurationWithDataflowRunner() {
     String projectId = "testproject";
@@ -94,6 +106,9 @@ public class SnapshotUtilsTest {
     assertThat(configurations.get("s.gs.auth.type"), nullValue());
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getConfiguration} returns correct config for DirectRunner.
+   */
   @Test
   public void testGetConfigurationWithDirectRunner() {
     Map<String, String> hbaseConfiguration =
@@ -108,6 +123,9 @@ public class SnapshotUtilsTest {
     assertThat(configurations.get("fs.gs.auth.type"), is("APPLICATION_DEFAULT"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getHBaseConfiguration} converts map to Hadoop Configuration.
+   */
   @Test
   public void testGetHbaseConfiguration() {
     Map<String, String> configurations =
@@ -118,6 +136,9 @@ public class SnapshotUtilsTest {
     assertThat(hbaseConfiguration.get("throttling.threshold.ms"), is("200"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#buildSnapshotConfigs} creates correct SnapshotConfig list.
+   */
   @Test
   public void testBuildSnapshotConfigs() {
     String projectId = "testproject";
@@ -143,6 +164,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshotConfigs.get(1).getTableName(), is("bookcontent"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromString} parses single snapshot correctly.
+   */
   @Test
   public void testGetSnapshotsFromStringReturnsSameTableName() {
     String snapshotsWithBigtableTableName = "bookmark-2099";
@@ -152,6 +176,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.get("bookmark-2099"), is("bookmark-2099"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromString} parses multiple snapshots correctly.
+   */
   @Test
   public void testGetSnapshotsFromStringReturnsMultipleTables() {
     String snapshotsWithBigtableTableName = "snapshot1,snapshot2,snapshot3:mytable3,snapshot4";
@@ -164,6 +191,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.get("snapshot4"), is("snapshot4"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromString} parses snapshot and table mapping correctly.
+   */
   @Test
   public void testGetSnapshotsFromStringReturnsParsedValues() {
     String snapshotsWithBigtableTableName =
@@ -174,6 +204,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.get("malwarescanstate-9087"), is("malwarescan"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromString} throws exception on invalid format.
+   */
   @Test(expected = IllegalArgumentException.class)
   public void testGetSnapshotsFromStringThrowsException() {
     String snapshotsWithBigtableTableName =
@@ -198,6 +231,9 @@ public class SnapshotUtilsTest {
     return SnapshotUtils.getSnapshotsFromSnapshotPath(importSnapshotpath, gcsUtilMock, prefix);
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} returns all snapshots when using wildcard.
+   */
   @Test
   public void testgetAllSnapshotsFromSnapshotPath() throws IOException {
     List<String> snapshotList = Arrays.asList("audit-events", "dlpInfo", "ce-metrics-manifest");
@@ -206,6 +242,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.keySet(), containsInAnyOrder(snapshotList.toArray(new String[0])));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} returns subset of snapshots matching regex.
+   */
   @Test
   public void testgetSubSetSnapshotsFromSnapshotPath() throws IOException {
     List<String> snapshotList =
@@ -222,12 +261,18 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.keySet(), containsInAnyOrder(expectedResult.toArray(new String[0])));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} returns empty map when no objects found.
+   */
   @Test
   public void testgetSubSetSnapshotsFromSnapshotPathReturnsEmptyMap() throws IOException {
     Map<String, String> snapshots = getMatchingSnapshotsFromSnapshotPath(null, "*");
     assertThat(snapshots.size(), is(0));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} handles GCS pagination correctly.
+   */
   @Test
   public void testGetSnapshotsFromSnapshotPath_pagination() throws IOException {
     String baseObjectPath = "snapshots/20220309230526";
@@ -255,6 +300,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.keySet(), containsInAnyOrder("snap1", "snap2"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} returns matching snapshot for literal string.
+   */
   @Test
   public void testGetSnapshotsFromSnapshotPath_literal() throws IOException {
     List<String> snapshotList = Arrays.asList("snap1", "snap2");
@@ -263,6 +311,9 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.get("snap1"), is("snap1"));
   }
 
+  /**
+   * Tests that {@link SnapshotUtils#getSnapshotsFromSnapshotPath} returns matching snapshots for simple glob pattern.
+   */
   @Test
   public void testGetSnapshotsFromSnapshotPath_simpleGlob() throws IOException {
     List<String> snapshotList = Arrays.asList("snap1", "snap2", "othersnap");
