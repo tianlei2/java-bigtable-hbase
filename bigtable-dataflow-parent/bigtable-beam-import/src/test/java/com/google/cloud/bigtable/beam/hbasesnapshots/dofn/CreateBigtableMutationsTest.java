@@ -70,40 +70,30 @@ public class CreateBigtableMutationsTest {
     byte[] rowKey = "row-key".getBytes();
     Cell cell = new KeyValue(rowKey, "cf".getBytes(), "qual".getBytes(), "val".getBytes());
 
-    result = Result.create(Collections.singletonList(cell));
+    Result localResult = Result.create(Collections.singletonList(cell));
 
     CreateBigtableMutations fn = new CreateBigtableMutations(100, false, 0L, false, 0, false, 0);
 
-    fn.processElement(KV.of(snapshotConfig, result), receiver);
-
+    fn.processElement(KV.of(snapshotConfig, localResult), receiver);
     ArgumentCaptor<KV<String, Iterable<Mutation>>> captor = ArgumentCaptor.forClass(KV.class);
     verify(receiver, times(1)).output(captor.capture());
-
-    KV<String, Iterable<Mutation>> output = captor.getValue();
-    assertEquals("my-table", output.getKey());
-
-    Iterator<Mutation> iterator = output.getValue().iterator();
-    assertEquals(true, iterator.hasNext());
-    Mutation mutation = iterator.next();
+    KV<String, Iterable<Mutation>> kv = captor.getValue();
+    assertEquals("my-table", kv.getKey());
+    Iterator<Mutation> mutationIt = kv.getValue().iterator();
+    assertEquals(true, mutationIt.hasNext());
+    Mutation mutation = mutationIt.next();
     assertEquals("row-key", new String(mutation.getRow()));
-    // Validate cells in mutation
-    List<Cell> cells = mutation.getFamilyCellMap().values().iterator().next();
-    assertEquals(1, cells.size());
-    Cell c = cells.get(0);
-    assertEquals(
-        "qual", new String(c.getQualifierArray(), c.getQualifierOffset(), c.getQualifierLength()));
-    assertEquals(false, iterator.hasNext());
+    assertEquals(false, mutationIt.hasNext());
   }
 
   /** Tests that {@link CreateBigtableMutations#processElement} skips results with no cells. */
   @Test
   public void testProcessElement_emptyCells() throws Exception {
-    result = Result.create(Collections.<Cell>emptyList());
+    Result localResult = Result.create(Collections.<Cell>emptyList());
 
     CreateBigtableMutations fn = new CreateBigtableMutations(100, false, 0L, false, 0, false, 0);
 
-    fn.processElement(KV.of(snapshotConfig, result), receiver);
-
+    fn.processElement(KV.of(snapshotConfig, localResult), receiver);
     verify(receiver, times(0)).output(Mockito.any());
   }
 

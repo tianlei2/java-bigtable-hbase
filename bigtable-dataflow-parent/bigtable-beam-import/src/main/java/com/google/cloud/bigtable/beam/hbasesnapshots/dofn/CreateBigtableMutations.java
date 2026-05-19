@@ -19,6 +19,8 @@ import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
 import java.io.IOException;
 import java.util.ArrayList;
 import java.util.List;
+import org.apache.beam.sdk.metrics.Counter;
+import org.apache.beam.sdk.metrics.Metrics;
 import org.apache.beam.sdk.transforms.DoFn;
 import org.apache.beam.sdk.values.KV;
 import org.apache.hadoop.hbase.Cell;
@@ -33,6 +35,13 @@ import org.slf4j.LoggerFactory;
 public class CreateBigtableMutations
     extends DoFn<KV<SnapshotConfig, Result>, KV<String, Iterable<Mutation>>> {
   private static final Logger LOG = LoggerFactory.getLogger(CreateBigtableMutations.class);
+
+  private static final Counter droppedRows =
+      Metrics.counter(CreateBigtableMutations.class, "droppedRows");
+  private static final Counter droppedCells =
+      Metrics.counter(CreateBigtableMutations.class, "droppedCells");
+  private static final Counter droppedRowKeys =
+      Metrics.counter(CreateBigtableMutations.class, "droppedRowKeys");
   private final int maxMutationsPerRequestThreshold;
 
   private final boolean filterLargeRows;
@@ -70,7 +79,7 @@ public class CreateBigtableMutations
       @Element KV<SnapshotConfig, Result> element,
       OutputReceiver<KV<String, Iterable<Mutation>>> outputReceiver)
       throws IOException {
-    if (element.getValue().listCells() == null || element.getValue().listCells().isEmpty()) {
+    if (element.getValue().isEmpty()) {
       return;
     }
     String targetTable = element.getKey().getTableName();
@@ -78,13 +87,30 @@ public class CreateBigtableMutations
 
     // Limit the number of mutations per Put (server will reject >= 100k mutations per Put)
     byte[] rowKey = element.getValue().getRow();
+
+    // Hoist row key size check to the top to fail-fast and avoid expensive allocations.
+    // We also use Beam metrics to surface data loss instantly.
+    if (filterLargeRowKeys && rowKey.length > filterLargeRowKeysThresholdBytes) {
+      LOG.warn(
+          "For snapshot "
+              + snapshotName
+              + ": Dropping row, row key length, "
+              + rowKey.length
+              + ", exceeds filter length threshold, "
+              + filterLargeRowKeysThresholdBytes
+              + ", row key: "
+              + org.apache.hadoop.hbase.util.Bytes.toStringBinary(rowKey));
+      droppedRowKeys.inc();
+      return;
+    }
+
     List<Mutation> mutations = new ArrayList<>();
 
     boolean logAndSkipIncompatibleRowMutations =
         convertAndValidateThresholds(
             rowKey, element.getValue().listCells(), mutations, snapshotName);
 
-    if (!logAndSkipIncompatibleRowMutations && mutations.size() > 0) {
+    if (!logAndSkipIncompatibleRowMutations && !mutations.isEmpty()) {
       outputReceiver.output(KV.of(targetTable, mutations));
     }
   }
@@ -97,24 +123,42 @@ public class CreateBigtableMutations
     Put put = null;
     int cellCount = 0;
     long totalByteSize = 0L;
+    boolean loggedLargeCellForRow = false;
 
     // create mutations
     for (Cell cell : cells) {
       totalByteSize += cell.heapSize();
 
-      // handle large cells
-      if (filterLargeCells && cell.getValueLength() > filterLargeCellThresholdBytes) {
+      // Check threshold inside loop to fail-fast and avoid OOM by allocating too many mutations.
+      if (filterLargeRows && totalByteSize > filterLargeRowThresholdBytes) {
+        logAndSkipIncompatibleRows = true;
         LOG.warn(
             "For snapshot "
                 + snapshotName
-                + ": Dropping mutation, cell value length, "
-                + cell.getValueLength()
-                + ", exceeds filter length, "
-                + filterLargeCellThresholdBytes
-                + ", cell: "
-                + cell
+                + ": Dropping row, row length, "
+                + totalByteSize
+                + ", exceeds filter length threshold, "
+                + filterLargeRowThresholdBytes
                 + ", row key: "
                 + Bytes.toStringBinary(rowKey));
+        droppedRows.inc();
+        mutations.clear();
+        break;
+      }
+
+      // handle large cells
+      if (filterLargeCells && cell.getValueLength() > filterLargeCellThresholdBytes) {
+        if (!loggedLargeCellForRow) {
+          LOG.warn(
+              "For snapshot "
+                  + snapshotName
+                  + ": Dropping large cells for row "
+                  + Bytes.toStringBinary(rowKey)
+                  + ". At least one cell exceeds threshold "
+                  + filterLargeCellThresholdBytes);
+          loggedLargeCellForRow = true;
+        }
+        droppedCells.inc();
         continue;
       }
 
@@ -126,32 +170,6 @@ public class CreateBigtableMutations
       }
       put.add(cell);
       cellCount++;
-    }
-
-    if (filterLargeRows && totalByteSize > filterLargeRowThresholdBytes) {
-      logAndSkipIncompatibleRows = true;
-      LOG.warn(
-          "For snapshot "
-              + snapshotName
-              + ": Dropping row, row length, "
-              + totalByteSize
-              + ", exceeds filter length threshold, "
-              + filterLargeRowThresholdBytes
-              + ", row key: "
-              + Bytes.toStringBinary(rowKey));
-    }
-
-    if (filterLargeRowKeys && rowKey.length > filterLargeRowKeysThresholdBytes) {
-      logAndSkipIncompatibleRows = true;
-      LOG.warn(
-          "For snapshot "
-              + snapshotName
-              + ": Dropping row, row key length, "
-              + rowKey.length
-              + ", exceeds filter length threshold, "
-              + filterLargeRowKeysThresholdBytes
-              + ", row key: "
-              + Bytes.toStringBinary(rowKey));
     }
 
     return logAndSkipIncompatibleRows;
