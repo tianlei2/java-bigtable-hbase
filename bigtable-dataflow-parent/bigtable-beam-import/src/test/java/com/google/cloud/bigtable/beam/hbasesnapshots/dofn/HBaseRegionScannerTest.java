@@ -21,6 +21,7 @@ import static org.junit.Assert.assertNull;
 import static org.mockito.Mockito.mock;
 import static org.mockito.Mockito.mockStatic;
 
+import java.io.IOException;
 import java.util.List;
 import org.apache.hadoop.conf.Configuration;
 import org.apache.hadoop.fs.FileSystem;
@@ -175,5 +176,20 @@ public class HBaseRegionScannerTest {
     Mockito.verify(scanner, Mockito.times(1)).close();
     Mockito.verify(region, Mockito.times(1)).closeRegionOperation();
     Mockito.verify(region, Mockito.times(1)).close(true);
+  }
+
+  @Test
+  public void testConstructor_InitializationFailure() throws Exception {
+    Mockito.doThrow(new IOException("Initialization failed")).when(region).initialize();
+
+    try {
+      new HBaseRegionScanner(conf, fs, rootDir, htd, hri, scan);
+      org.junit.Assert.fail("Expected IOException");
+    } catch (IOException e) {
+      org.junit.Assert.assertEquals("Initialization failed", e.getMessage());
+    }
+
+    Mockito.verify(region, Mockito.times(1)).close(true);
+    Mockito.verify(region, Mockito.never()).closeRegionOperation();
   }
 }

@@ -57,13 +57,6 @@ public class SnapshotUtilsTest {
   @Mock GcsUtil gcsUtilMock;
   @Mock Objects gcsObjects;
 
-  @org.junit.Before
-  public void setup() throws Exception {
-    java.lang.reflect.Field field = SnapshotUtils.class.getDeclaredField("hbaseConfiguration");
-    field.setAccessible(true);
-    field.set(null, null);
-  }
-
   @Test
   public void testRemoveSuffixSlashIfExists() {
     String path = "gs://bucket/prefix";
@@ -229,8 +222,52 @@ public class SnapshotUtilsTest {
     assertThat(snapshots.keySet(), containsInAnyOrder(expectedResult.toArray(new String[0])));
   }
 
-  @Test(expected = IllegalStateException.class)
-  public void testgetSubSetSnapshotsFromSnapshotPathThrowsException() throws IOException {
+  @Test
+  public void testgetSubSetSnapshotsFromSnapshotPathReturnsEmptyMap() throws IOException {
     Map<String, String> snapshots = getMatchingSnapshotsFromSnapshotPath(null, "*");
+    assertThat(snapshots.size(), is(0));
+  }
+
+  @Test
+  public void testGetSnapshotsFromSnapshotPath_pagination() throws IOException {
+    String baseObjectPath = "snapshots/20220309230526";
+    String importSnapshotpath = String.format("gs://sym-bucket/%s", baseObjectPath);
+
+    StorageObject obj1 = new StorageObject().setId(baseObjectPath + "/.hbase-snapshot/snap1/file1");
+    StorageObject obj2 = new StorageObject().setId(baseObjectPath + "/.hbase-snapshot/snap2/file2");
+
+    Objects page1 = new Objects().setItems(Arrays.asList(obj1)).setNextPageToken("token");
+    Objects page2 = new Objects().setItems(Arrays.asList(obj2)).setNextPageToken(null);
+
+    Mockito.when(
+            gcsUtilMock.listObjects(
+                Mockito.eq("sym-bucket"), Mockito.anyString(), Mockito.isNull()))
+        .thenReturn(page1);
+    Mockito.when(
+            gcsUtilMock.listObjects(
+                Mockito.eq("sym-bucket"), Mockito.anyString(), Mockito.eq("token")))
+        .thenReturn(page2);
+
+    Map<String, String> snapshots =
+        SnapshotUtils.getSnapshotsFromSnapshotPath(importSnapshotpath, gcsUtilMock, "*");
+
+    assertThat(snapshots.size(), is(2));
+    assertThat(snapshots.keySet(), containsInAnyOrder("snap1", "snap2"));
+  }
+
+  @Test
+  public void testGetSnapshotsFromSnapshotPath_literal() throws IOException {
+    List<String> snapshotList = Arrays.asList("snap1", "snap2");
+    Map<String, String> snapshots = getMatchingSnapshotsFromSnapshotPath(snapshotList, "snap1");
+    assertThat(snapshots.size(), is(equalTo(1)));
+    assertThat(snapshots.get("snap1"), is("snap1"));
+  }
+
+  @Test
+  public void testGetSnapshotsFromSnapshotPath_simpleGlob() throws IOException {
+    List<String> snapshotList = Arrays.asList("snap1", "snap2", "othersnap");
+    Map<String, String> snapshots = getMatchingSnapshotsFromSnapshotPath(snapshotList, "snap*");
+    assertThat(snapshots.size(), is(equalTo(2)));
+    assertThat(snapshots.keySet(), containsInAnyOrder("snap1", "snap2"));
   }
 }
