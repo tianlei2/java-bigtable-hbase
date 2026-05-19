@@ -57,7 +57,7 @@ public abstract class SnapshotConfig implements Serializable {
   @Override
   public abstract boolean equals(Object obj);
 
-  abstract Map<String, String> getConfigurationDetails();
+  public abstract Map<String, String> getConfigurationDetails();
 
   public Configuration getConfiguration() {
     return SnapshotUtils.getHBaseConfiguration(getConfigurationDetails());

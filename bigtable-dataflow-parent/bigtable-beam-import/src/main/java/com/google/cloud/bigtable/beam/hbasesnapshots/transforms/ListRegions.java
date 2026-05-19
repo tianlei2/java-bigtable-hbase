@@ -16,6 +16,7 @@
 package com.google.cloud.bigtable.beam.hbasesnapshots.transforms;
 
 import com.google.api.core.InternalApi;
+import com.google.cloud.bigtable.beam.hbasesnapshots.SnapshotUtils;
 import com.google.cloud.bigtable.beam.hbasesnapshots.coders.RegionConfigCoder;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.RegionConfig;
 import com.google.cloud.bigtable.beam.hbasesnapshots.conf.SnapshotConfig;
@@ -53,6 +54,17 @@ public class ListRegions
 
     private static long GIGA_BYTE = 1024 * 1024 * 1024;
 
+    // Beam reuses DoFn instances for multiple elements. Initializing the cache in @Setup
+    // ensures that we only create the cache once per DoFn instance lifecycle (per worker thread),
+    // avoiding heavy XML parsing overhead for Configuration while also avoiding static state
+    // and ensuring thread safety since Beam isolates DoFn instances.
+    @Setup
+    public void setup() {
+      configCache = new java.util.HashMap<>();
+    }
+
+    private transient Map<Map<String, String>, Configuration> configCache;
+
     private Map<Long, Long> computeRegionSize(SnapshotManifest snapshotManifest) {
       Map<Long, Long> regionsSize = new HashMap<>();
       long totalSize = 0;
@@ -61,8 +73,8 @@ public class ListRegions
         totalSize = 0;
         for (SnapshotProtos.SnapshotRegionManifest.FamilyFiles familyFiles :
             regionManifest.getFamilyFilesList()) {
-          for (SnapshotProtos.SnapshotRegionManifest.StoreFile StoreFile :
-              familyFiles.getStoreFilesList()) totalSize += StoreFile.getFileSize();
+          for (SnapshotProtos.SnapshotRegionManifest.StoreFile storeFile :
+              familyFiles.getStoreFilesList()) totalSize += storeFile.getFileSize();
         }
         regionsSize.put(regionManifest.getRegionInfo().getRegionId(), totalSize);
       }
@@ -82,7 +94,9 @@ public class ListRegions
         @Element SnapshotConfig snapshotConfig, OutputReceiver<RegionConfig> outputReceiver)
         throws Exception {
 
-      Configuration configuration = snapshotConfig.getConfiguration();
+      Map<String, String> configDetails = snapshotConfig.getConfigurationDetails();
+      Configuration configuration =
+          configCache.computeIfAbsent(configDetails, SnapshotUtils::getHBaseConfiguration);
       Path sourcePath = snapshotConfig.getSourcePath();
       FileSystem fileSystem = sourcePath.getFileSystem(configuration);
       SnapshotManifest snapshotManifest =
@@ -104,7 +118,7 @@ public class ListRegions
                       .setSnapshotConfig(snapshotConfig)
                       .setTableDescriptor(tableDescriptor)
                       .setRegionInfo(regionInfo)
-                      .setRegionSize(regionsSize.get(regionInfo.getRegionId()))
+                      .setRegionSize(regionsSize.getOrDefault(regionInfo.getRegionId(), 0L))
                       .build())
           .forEach(outputReceiver::output);
     }
